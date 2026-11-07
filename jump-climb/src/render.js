@@ -24,8 +24,8 @@ function latenessColor(ms) {
 // 直前のジャンプの種類を文字にする
 function tiltLabel(tilt) {
   const n = Math.abs(tilt);
-  if (n === 0) return '大ジャンプ(真下)';
-  return `斜め ${tilt < 0 ? '左' : '右'} ${Math.round(n * 100)}%`;
+  if (n === 0) return '真下タップ → 真上へ(大ジャンプ)';
+  return `${tilt < 0 ? '左下' : '右下'}タップ → ${tilt < 0 ? '右上' : '左上'}へ ${Math.round(n * 100)}%`;
 }
 
 export function createRenderer(canvas) {
@@ -68,27 +68,32 @@ export function createRenderer(canvas) {
     ctx.fillText(str, x, y);
   }
 
-  // 判定ゾーン: キャラの左右に「真下(緑)」「斜め(黄)」の範囲を縦帯で表示する。
-  // 黄色は外側ほど濃く、最大の斜めになる位置で一番濃くなる。
-  function drawZones(p, px) {
+  // 判定ゾーン: キャラの「下側」に、タップ位置ごとの範囲を縦帯で表示する。
+  //   中央(緑)=真下をタップ→真上へ大ジャンプ
+  //   左右(黄)=左下をタップ→右上へ / 右下をタップ→左上へ(外側ほど濃く、線の位置で最大)
+  function drawZones(p, px, top) {
     const dead = p.deadZone;
     const maxZ = p.maxZone;
-    ctx.fillStyle = 'rgba(110,231,160,0.10)';
-    ctx.fillRect(px - dead, 0, dead * 2, H);
+    const h = H - top;
+    if (h <= 0) return;
+    ctx.fillStyle = 'rgba(110,231,160,0.14)';
+    ctx.fillRect(px - dead, top, dead * 2, h);
     for (const dir of [-1, 1]) {
       const x0 = px + dir * dead;
       const x1 = px + dir * maxZ;
       const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-      grad.addColorStop(0, 'rgba(255,213,74,0.03)');
-      grad.addColorStop(1, 'rgba(255,213,74,0.16)');
+      grad.addColorStop(0, 'rgba(255,213,74,0.04)');
+      grad.addColorStop(1, 'rgba(255,213,74,0.18)');
       ctx.fillStyle = grad;
-      ctx.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), H);
+      ctx.fillRect(Math.min(x0, x1), top, Math.abs(x1 - x0), h);
       ctx.fillStyle = 'rgba(255,213,74,0.35)';
-      ctx.fillRect(x1 - 1, 0, 2, H); // 最大の斜めになる位置の線
+      ctx.fillRect(x1 - 1, top, 2, h); // 最大の斜めになる位置の線
     }
-    text('真下', px, H - 14, 11, 'rgba(110,231,160,0.9)', 'center');
-    text('斜め', px - (dead + maxZ) / 2, H - 14, 11, 'rgba(255,213,74,0.9)', 'center');
-    text('斜め', px + (dead + maxZ) / 2, H - 14, 11, 'rgba(255,213,74,0.9)', 'center');
+    const mid = (dead + maxZ) / 2;
+    const ly = Math.min(H - 14, top + 26);
+    text('↑真上', px, ly, 11, 'rgba(110,231,160,0.95)', 'center');
+    text('↗右上へ', px - mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
+    text('↖左上へ', px + mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
   }
 
   function drawWorld(state, p, py, px, showZones) {
@@ -110,7 +115,7 @@ export function createRenderer(canvas) {
     }
 
     // 判定ゾーン(キャラの後ろに描く)
-    if (showZones && state.phase !== 'cleared') drawZones(p, px);
+    if (showZones && state.phase !== 'cleared') drawZones(p, px, sy(py));
 
     // 地面
     if (sy(0) < H) {
@@ -177,7 +182,7 @@ export function createRenderer(canvas) {
     const y = H * 0.62;
     text('タップでスタート', W / 2, y, 22, '#fff', 'center', true);
     text('落下に入ったら、もう一度タップ', W / 2, y + 28, 14, '#fff', 'center');
-    text('キャラの真下=大ジャンプ / 横にずらす=斜め', W / 2, y + 50, 13, '#ffd54a', 'center');
+    text('真下=真上へ / 左下=右上へ / 右下=左上へ', W / 2, y + 50, 13, '#ffd54a', 'center');
     text('緑=いまタップ有効 / 橙=無効', W / 2, y + 72, 13, '#cfd6e6', 'center');
     text('右上の「調整」で数値を変えられます', W / 2, y + 94, 13, '#cfd6e6', 'center');
   }

@@ -120,28 +120,29 @@ const values = defaultValues();
   console.log('OK  不感帯内ではxが動かない');
 }
 
-// 8. 最大の斜め(右110px): 高さ=初速×0.8 → 約0.64倍、横に進む
+// 8. 最大の斜め(右下110pxをタップ→左上へ): 高さ=初速×0.8 → 約0.64倍、タップと反対の左へ進む
 {
   const { p, s, peak } = jumpToApex(values, 180 + 110);
   const v0s = p.v0 * (1 - values.sideJumpLoss);
   near(peak, (v0s * v0s) / (2 * p.g), 1, '最大の斜めの高さ(px)');
-  near(s.x - 180, p.sideSpeed * (v0s / p.g), 3, '最大の斜めで頂点までに進む横の距離(px)');
+  near(180 - s.x, p.sideSpeed * (v0s / p.g), 6, '最大の斜めで頂点までに進む横の距離(px)');
   assert.equal(s.lastTilt, 1);
-  assert.ok(s.vx > 0);
-  console.log('OK  右の斜め: 低く、右へ進む');
+  assert.ok(s.vx < 0 && s.x < 180);
+  console.log('OK  右下をタップ: 低く、左上へ進む');
   const left = jumpToApex(values, 180 - 110);
-  near(180 - left.s.x, s.x - 180, 1e-6, '左右対称(横の距離)');
-  assert.ok(left.s.vx < 0 || left.s.x < 180);
+  near(left.s.x - 180, 180 - s.x, 1e-6, '左右対称(横の距離)');
+  assert.ok(left.s.vx > 0 && left.s.x > 180);
+  console.log('OK  左下をタップ: 右上へ進む');
 }
 
-// 9. 壁: 画面の外へ出ない。ぶつかると横速度が止まる
+// 9. 壁: 画面の外へ出ない。ぶつかると横速度が止まる(左下をタップし続けて右へ進む)
 {
   const p = deriveParams(values);
   const s = createState();
-  step(s, p, { x: 360, y: 400 }); // 右へ最大の斜めを連続で出す
+  step(s, p, { x: 0, y: 400 }); // 左下を最大にタップ→右上へ。これを連続で出す
   for (let i = 0; i < 60 * 30 && !s.cleared; i++) {
     let tap = null;
-    if (s.onGround || (s.falling && s.fallSteps === 1)) tap = { x: s.x + 150, y: 400 };
+    if (s.onGround || (s.falling && s.fallSteps === 1)) tap = { x: s.x - 150, y: 400 };
     step(s, p, tap);
     assert.ok(s.x <= p.xMax + 1e-9 && s.x >= p.xMin - 1e-9, `壁を越えた: ${s.x}`);
   }

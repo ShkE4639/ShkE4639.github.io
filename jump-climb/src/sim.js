@@ -41,7 +41,8 @@ export function deriveParams(values) {
 }
 
 // タップ位置とキャラの横位置から、斜めの強さ(-1〜+1)を求める。
-// 0=真下(大ジャンプ)、+1=右へ最大の斜め、-1=左へ最大の斜め。
+// 0=真下(大ジャンプ)、+1=キャラの右下を最大にタップ、-1=左下を最大にタップ。
+// 跳ぶ向きはタップと反対側(左下をタップ→右上へ、右下をタップ→左上へ)。
 export function tiltFromDx(dx, p) {
   const a = Math.abs(dx);
   let n = (a - p.deadZone) / (p.maxZone - p.deadZone);
@@ -96,7 +97,7 @@ function doJump(s, p, tapX) {
   s.lastJumpY = s.y;
   s.lastTilt = tilt;
   s.vy = p.v0 * (1 - p.sideLoss * n);       // 斜めほど低くなる
-  s.vx = tilt * p.sideSpeed;                // 斜めほど横に速い(真下なら 0)
+  s.vx = tilt === 0 ? 0 : -tilt * p.sideSpeed; // タップと反対向きへ。斜めほど横に速い(真下なら 0)
   s.onGround = false;
   s.falling = false;
   s.fallSteps = 0;

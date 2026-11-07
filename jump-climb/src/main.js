@@ -89,15 +89,15 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// PCで試すとき用: スペース=キャラの真下をタップ / ←→(またはA/D)=左右にずらしてタップ
+// PCで試すとき用: スペース=キャラの真下をタップ(真上へ) / ←→(またはA/D)=跳びたい方向(反対側の下をタップしたことになる)
 // x は 0.1 単位に丸める(input.js と同じ。ログと再生で値を一致させるため)。
 const q = (n) => Math.round(n * 10) / 10;
 window.addEventListener('keydown', (e) => {
   if (e.repeat || paused) return;
   let dx = null;
   if (e.code === 'Space') dx = 0;
-  else if (e.code === 'ArrowLeft' || e.code === 'KeyA') dx = -(p.deadZone + p.maxZone) / 2;
-  else if (e.code === 'ArrowRight' || e.code === 'KeyD') dx = (p.deadZone + p.maxZone) / 2;
+  else if (e.code === 'ArrowLeft' || e.code === 'KeyA') dx = (p.deadZone + p.maxZone) / 2;
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') dx = -(p.deadZone + p.maxZone) / 2;
   if (dx === null) return;
   e.preventDefault();
   input.push({ x: q(state.x + dx), y: q(WORLD.height * 0.6) });
