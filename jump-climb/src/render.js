@@ -7,7 +7,6 @@ import { elapsedSeconds } from './sim.js';
 const W = WORLD.width;
 const H = WORLD.height;
 const SIZE = WORLD.playerSize;
-const PLAYER_X = W / 2;                         // 第1週: キャラのxは固定
 const PLAYER_SCREEN_Y = H * WORLD.playerScreenYRatio;
 const FONT = 'system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif';
 
@@ -20,6 +19,13 @@ function latenessColor(ms) {
   if (ms <= 50) return '#6ee7a0';
   if (ms <= 150) return '#ffd54a';
   return '#ff7a7a';
+}
+
+// 直前のジャンプの種類を文字にする
+function tiltLabel(tilt) {
+  const n = Math.abs(tilt);
+  if (n === 0) return '大ジャンプ(真下)';
+  return `斜め ${tilt < 0 ? '左' : '右'} ${Math.round(n * 100)}%`;
 }
 
 export function createRenderer(canvas) {
@@ -62,7 +68,30 @@ export function createRenderer(canvas) {
     ctx.fillText(str, x, y);
   }
 
-  function drawWorld(state, p, py) {
+  // 判定ゾーン: キャラの左右に「真下(緑)」「斜め(黄)」の範囲を縦帯で表示する。
+  // 黄色は外側ほど濃く、最大の斜めになる位置で一番濃くなる。
+  function drawZones(p, px) {
+    const dead = p.deadZone;
+    const maxZ = p.maxZone;
+    ctx.fillStyle = 'rgba(110,231,160,0.10)';
+    ctx.fillRect(px - dead, 0, dead * 2, H);
+    for (const dir of [-1, 1]) {
+      const x0 = px + dir * dead;
+      const x1 = px + dir * maxZ;
+      const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+      grad.addColorStop(0, 'rgba(255,213,74,0.03)');
+      grad.addColorStop(1, 'rgba(255,213,74,0.16)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), H);
+      ctx.fillStyle = 'rgba(255,213,74,0.35)';
+      ctx.fillRect(x1 - 1, 0, 2, H); // 最大の斜めになる位置の線
+    }
+    text('真下', px, H - 14, 11, 'rgba(110,231,160,0.9)', 'center');
+    text('斜め', px - (dead + maxZ) / 2, H - 14, 11, 'rgba(255,213,74,0.9)', 'center');
+    text('斜め', px + (dead + maxZ) / 2, H - 14, 11, 'rgba(255,213,74,0.9)', 'center');
+  }
+
+  function drawWorld(state, p, py, px, showZones) {
     ctx.fillStyle = '#1b2236';
     ctx.fillRect(0, 0, W, H);
 
@@ -79,6 +108,9 @@ export function createRenderer(canvas) {
       ctx.stroke();
       if (h >= 0 && major) text(`${h}`, W - 6, sy(h) - 4, 11, 'rgba(255,255,255,0.5)', 'right');
     }
+
+    // 判定ゾーン(キャラの後ろに描く)
+    if (showZones && state.phase !== 'cleared') drawZones(p, px);
 
     // 地面
     if (sy(0) < H) {
@@ -99,15 +131,15 @@ export function createRenderer(canvas) {
     // キャラ(緑=タップ有効 / 橙=無効)
     const valid = state.onGround || (state.falling && state.fallSteps <= p.windowSteps);
     ctx.fillStyle = valid ? COLOR.valid : COLOR.invalid;
-    ctx.fillRect(PLAYER_X - SIZE / 2, sy(py) - SIZE, SIZE, SIZE);
+    ctx.fillRect(px - SIZE / 2, sy(py) - SIZE, SIZE, SIZE);
 
     // 有効時間を絞っているとき: 残り時間のゲージ
     if (Number.isFinite(p.windowSteps) && state.falling) {
       const left = Math.max(0, 1 - state.fallSteps / p.windowSteps);
       ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.fillRect(PLAYER_X - 20, sy(py) + 4, 40, 4);
+      ctx.fillRect(px - 20, sy(py) + 4, 40, 4);
       ctx.fillStyle = valid ? COLOR.valid : '#ff7a7a';
-      ctx.fillRect(PLAYER_X - 20, sy(py) + 4, 40 * left, 4);
+      ctx.fillRect(px - 20, sy(py) + 4, 40 * left, 4);
     }
   }
 
@@ -136,14 +168,18 @@ export function createRenderer(canvas) {
       const ideal = (p.v0 * p.v0) / (2 * p.g);
       text(`1回の上昇 +${Math.round(state.lastGain)}px (満点 ${Math.round(ideal)})`, 10, 94, 13);
     }
+    if (state.lastTilt !== null) {
+      text(`直前: ${tiltLabel(state.lastTilt)}`, 10, 110, 13, '#cfe8ff');
+    }
   }
 
   function drawReady() {
     const y = H * 0.62;
     text('タップでスタート', W / 2, y, 22, '#fff', 'center', true);
     text('落下に入ったら、もう一度タップ', W / 2, y + 28, 14, '#fff', 'center');
-    text('緑=いまタップ有効 / 橙=無効', W / 2, y + 52, 13, '#cfd6e6', 'center');
-    text('右上の「調整」で数値を変えられます', W / 2, y + 74, 13, '#cfd6e6', 'center');
+    text('キャラの真下=大ジャンプ / 横にずらす=斜め', W / 2, y + 50, 13, '#ffd54a', 'center');
+    text('緑=いまタップ有効 / 橙=無効', W / 2, y + 72, 13, '#cfd6e6', 'center');
+    text('右上の「調整」で数値を変えられます', W / 2, y + 94, 13, '#cfd6e6', 'center');
   }
 
   function drawResult(result) {
@@ -160,10 +196,11 @@ export function createRenderer(canvas) {
   }
 
   // 1フレーム描く。alpha = 「次のステップまでどれだけ進んだか」(0〜1)で、動きを滑らかにする。
-  function draw({ state, p, alpha, frameDt, result }) {
+  function draw({ state, p, alpha, frameDt, result, showZones }) {
     const py = state.prevY + (state.y - state.prevY) * alpha;
+    const px = state.prevX + (state.x - state.prevX) * alpha;
     camY += (py - camY) * (1 - Math.exp(-frameDt * 12)); // カメラはなめらかに追従
-    drawWorld(state, p, py);
+    drawWorld(state, p, py, px, showZones);
     drawMarkers();
     drawHud(state, p);
     if (state.phase === 'ready') drawReady();

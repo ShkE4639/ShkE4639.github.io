@@ -85,15 +85,22 @@ function frame(now) {
     if (n === MAX_STEPS_PER_FRAME) acc = 0;
   }
   if (result) result.canRetry = performance.now() - finishedAt > RETRY_DELAY_MS;
-  renderer.draw({ state, p, alpha: acc / STEP, frameDt, result });
+  renderer.draw({ state, p, alpha: acc / STEP, frameDt, result, showZones: values.showZones === 1 });
   requestAnimationFrame(frame);
 }
 
-// PCで試すとき用: スペースキーでタップ(画面中央)
+// PCで試すとき用: スペース=キャラの真下をタップ / ←→(またはA/D)=左右にずらしてタップ
+// x は 0.1 単位に丸める(input.js と同じ。ログと再生で値を一致させるため)。
+const q = (n) => Math.round(n * 10) / 10;
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'Space' || e.repeat || paused) return;
+  if (e.repeat || paused) return;
+  let dx = null;
+  if (e.code === 'Space') dx = 0;
+  else if (e.code === 'ArrowLeft' || e.code === 'KeyA') dx = -(p.deadZone + p.maxZone) / 2;
+  else if (e.code === 'ArrowRight' || e.code === 'KeyD') dx = (p.deadZone + p.maxZone) / 2;
+  if (dx === null) return;
   e.preventDefault();
-  input.push({ x: WORLD.width / 2, y: WORLD.height * 0.6 });
+  input.push({ x: q(state.x + dx), y: q(WORLD.height * 0.6) });
 });
 
 createPanel({

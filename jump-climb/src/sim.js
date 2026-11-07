@@ -6,9 +6,10 @@
 //   3. 四則演算だけ使う(Math.sin など三角関数は端末差が出うるので避ける)
 //   4. 入力は step() の引数で受け取る。同じ入力を同じステップに与えれば同じ結果になる
 //
-// 座標: y は「地面からの高さ」で、上が +。描画側で上下を反転する。
+// 座標: y は「地面からの高さ」で、上が +。x は画面の横位置(0〜360)で、右が +。
+//       描画側で上下を反転する。画面の横幅=世界の横幅なので、タップの x がそのまま使える。
 
-import { STEP } from './config.js';
+import { STEP, WORLD } from './config.js';
 
 const EPS = 1e-9;
 
@@ -19,6 +20,7 @@ export function deriveParams(values) {
   const H = values.jumpHeight;
   const T = values.apexTime;
   const g = (2 * H) / (T * T);
+  const half = WORLD.playerSize / 2;
   return {
     g,
     gFall: g * values.fallGravityMult,
@@ -27,7 +29,26 @@ export function deriveParams(values) {
     bufferSteps: values.bufferSteps,
     windowSteps: values.fallWindowSec > 0 ? Math.round(values.fallWindowSec / STEP) : Infinity,
     stageHeight: values.stageHeight,
+    // 斜めジャンプ
+    deadZone: values.deadZone,
+    maxZone: Math.max(values.maxZone, values.deadZone + 10), // 不感帯より必ず広くする
+    sideSpeed: values.sideSpeed,
+    sideLoss: values.sideJumpLoss,
+    // 左右の壁(キャラの中心が動ける範囲)
+    xMin: half,
+    xMax: WORLD.width - half,
   };
+}
+
+// タップ位置とキャラの横位置から、斜めの強さ(-1〜+1)を求める。
+// 0=真下(大ジャンプ)、+1=右へ最大の斜め、-1=左へ最大の斜め。
+export function tiltFromDx(dx, p) {
+  const a = Math.abs(dx);
+  let n = (a - p.deadZone) / (p.maxZone - p.deadZone);
+  if (n < 0) n = 0;
+  if (n > 1) n = 1;
+  if (n === 0) return 0; // -0 にならないようにする
+  return dx < 0 ? -n : n;
 }
 
 export function createState() {
@@ -37,6 +58,9 @@ export function createState() {
     startStep: 0,
     finishStep: 0,
     cleared: false,
+    x: WORLD.width / 2,
+    prevX: WORLD.width / 2, // 描画の補間用(前のステップの x)
+    vx: 0,
     y: 0,
     prevY: 0,            // 描画の補間用(前のステップの y)
     vy: 0,
@@ -50,6 +74,7 @@ export function createState() {
     latenessCount: 0,
     lastJumpY: null,
     lastGain: null,      // 直前のジャンプからの上昇量(px)
+    lastTilt: null,      // 直前のジャンプの斜めの強さ(-1〜+1)
     maxY: 0,
   };
 }
@@ -58,15 +83,20 @@ function canJump(s, p) {
   return s.onGround || (s.falling && s.fallSteps <= p.windowSteps);
 }
 
-function doJump(s, p) {
+// ジャンプする。tapX は「そのタップの横位置」。キャラとのずれで斜めの強さが決まる。
+function doJump(s, p, tapX) {
   if (!s.onGround) {
     s.lastLateness = s.fallSteps * STEP;
     s.latenessSum += s.lastLateness;
     s.latenessCount++;
     if (s.lastJumpY !== null) s.lastGain = s.y - s.lastJumpY;
   }
+  const tilt = tiltFromDx(tapX - s.x, p);
+  const n = tilt < 0 ? -tilt : tilt;
   s.lastJumpY = s.y;
-  s.vy = p.v0;
+  s.lastTilt = tilt;
+  s.vy = p.v0 * (1 - p.sideLoss * n);       // 斜めほど低くなる
+  s.vx = tilt * p.sideSpeed;                // 斜めほど横に速い(真下なら 0)
   s.onGround = false;
   s.falling = false;
   s.fallSteps = 0;
@@ -74,10 +104,11 @@ function doJump(s, p) {
   s.jumps++;
 }
 
-// 1ステップ(1/60秒)進める。tap は { x, y } か null。
+// 1ステップ(1/60秒)進める。tap は { x, y } か null。(y は今は使わない)
 export function step(s, p, tap) {
   if (s.cleared) return;
   s.step++;
+  s.prevX = s.x;
   s.prevY = s.y;
   if (s.falling) s.fallSteps++;
   if (s.pending) s.pending.age++;
@@ -89,7 +120,7 @@ export function step(s, p, tap) {
       s.startStep = s.step;
     }
     if (canJump(s, p)) {
-      doJump(s, p);
+      doJump(s, p, tap.x);
     } else if (!s.onGround && !s.falling) {
       s.pending = { age: 0, x: tap.x }; // 上昇中のタップは先行入力として預かる
     }
@@ -102,11 +133,16 @@ export function step(s, p, tap) {
     s.vy -= g * STEP;
     if (s.vy < -p.maxFall) s.vy = -p.maxFall;
 
+    // 横移動(空中は速度が一定。壁に当たったら横速度だけ止まる)
+    s.x += s.vx * STEP;
+    if (s.x < p.xMin) { s.x = p.xMin; s.vx = 0; }
+    if (s.x > p.xMax) { s.x = p.xMax; s.vx = 0; }
+
     // 頂点を過ぎた瞬間
     if (!s.falling && s.vy <= EPS) {
       s.falling = true;
       s.fallSteps = 0;
-      if (s.pending && s.pending.age <= p.bufferSteps) doJump(s, p); // 先行入力を実行
+      if (s.pending && s.pending.age <= p.bufferSteps) doJump(s, p, s.pending.x); // 先行入力を実行
       s.pending = null;
     }
 
@@ -114,6 +150,7 @@ export function step(s, p, tap) {
     if (s.y <= 0 && s.vy <= 0) {
       s.y = 0;
       s.vy = 0;
+      s.vx = 0;
       s.onGround = true;
       s.falling = false;
       s.fallSteps = 0;

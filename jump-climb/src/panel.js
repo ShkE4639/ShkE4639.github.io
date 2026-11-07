@@ -16,6 +16,7 @@ function el(tag, props = {}, ...children) {
 
 function formatValue(def, v) {
   if (def.key === 'fallWindowSec' && v === 0) return '無制限';
+  if (def.key === 'showZones') return v ? 'ON' : 'OFF';
   return `${v}${def.unit}`;
 }
 
@@ -32,11 +33,17 @@ export function createPanel({ defs, values, onClose, onCopyLog }) {
     const T = values.apexTime;
     const speed = H / T;
     const dead = Math.sqrt((2 * H) / p.gFall);
+    // 最大の斜めジャンプ(頂点ちょうどでタップした場合)
+    const v0s = p.v0 * (1 - p.sideLoss);
+    const hSide = (v0s * v0s) / (2 * p.g);
+    const dist = p.sideSpeed * (v0s / p.g);
     info.textContent = [
       `重力 ${p.g.toFixed(0)} / 初速 ${p.v0.toFixed(0)} (px/秒)`,
       `完璧に連打したときの登る速さ: ${speed.toFixed(0)} px/秒`,
       `ステージを完璧に登ると: ${((values.stageHeight / H) * T).toFixed(1)} 秒`,
       `頂点から ${dead.toFixed(2)} 秒以上遅れると、登れなくなる`,
+      `最大の斜め: 高さ ${hSide.toFixed(0)}px(真下の${((hSide / H) * 100).toFixed(0)}%) / 横に約 ${dist.toFixed(0)}px`,
+      `真下の幅 ±${p.deadZone}px / 最大の斜めは ±${p.maxZone}px(画面幅360px)`,
     ].join('\n');
   }
 
