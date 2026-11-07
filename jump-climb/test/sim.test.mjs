@@ -212,7 +212,7 @@ const values = defaultValues();
   const p = deriveParams(values);
   const right = tiltFromDx(360 - p.xMax, p, p.xMax); // 右の壁(x=344)で、右端(x=360)をタップ
   assert.ok(right > 0.999, `右端: ${right}`);
-  const mid = tiltFromDx(8, p, p.xMax);
+  const mid = tiltFromDx(4, p, p.xMax);
   assert.ok(mid > 0 && mid < 1, `壁際の途中: ${mid}`);
   assert.equal(tiltFromDx(0, p, p.xMax), 0);
   assert.equal(tiltFromDx(-70, p, p.xMax), -0.5); // 反対側(左)は広いので縮まない
@@ -232,6 +232,21 @@ const values = defaultValues();
   while (!t.falling) step(t, p, null);
   assert.ok(t.x > p.xMin + 30, `壁から離れられない: ${t.x}`);
   console.log(`OK  壁際でも、画面の端をタップすれば反対へ離れられる(右壁→x=${s.x.toFixed(0)}, 左壁→x=${t.x.toFixed(0)})`);
+}
+
+// 15. 端の余白: 画面の端から20px手前をタップすれば、最大の斜めになる(端ぴったりは不要)
+{
+  const p = deriveParams(values);
+  assert.equal(p.edgeMargin, 20);
+  // 右寄り(x=300)で、右端から20px手前(x=340)をタップ → 最大
+  assert.ok(tiltFromDx(340 - 300, p, 300) > 0.999);
+  // 右端から40px手前(x=320)は、まだ最大ではない
+  assert.ok(tiltFromDx(320 - 300, p, 300) < 1);
+  // 余白0なら、端ぴったり(x=360)でないと最大にならない
+  const p0 = deriveParams({ ...values, edgeMargin: 0 });
+  assert.ok(tiltFromDx(340 - 300, p0, 300) < 0.999);
+  assert.ok(tiltFromDx(360 - 300, p0, 300) > 0.999);
+  console.log('OK  端の余白: 20px手前で最大 / 余白0なら端ぴったり');
 }
 
 console.log(`\nすべて合格(調整項目 ${PARAM_DEFS.length} 個)`);

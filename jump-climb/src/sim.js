@@ -12,6 +12,7 @@
 import { STEP, WORLD } from './config.js';
 
 const EPS = 1e-9;
+const MIN_ROOM = 8; // 壁にくっついても、キャラの中心から最低これだけ離れた位置を「最大」にする(px)
 
 // 調整パネルの値(values)から、シミュレーション用の値を計算する。
 // 「高さ H」と「頂点までの時間 T」を決めると、重力と初速は自動で決まる:
@@ -37,6 +38,7 @@ export function deriveParams(values) {
     // 左右の壁(キャラの中心が動ける範囲)
     xMin: half,
     xMax: WORLD.width - half,
+    edgeMargin: values.edgeMargin,
   };
 }
 
@@ -47,9 +49,11 @@ export function deriveParams(values) {
 // 壁際の対策: タップ側の画面端までの距離が短いとき、その側のゾーン(不感帯・最大位置)を
 // 同じ割合で縮める。これで「画面の端をタップすれば、必ず最大の斜めになる」ので、
 // 壁にくっついても反対側へ離れられる。
+// 端ぴったりは押しづらいので、画面端の edgeMargin(px)手前を「最大」の位置にする。
 //   side: タップ側(-1=キャラの左側 / +1=右側)、x: キャラの横位置
 export function zoneScale(side, x, p) {
-  const room = side < 0 ? x : WORLD.width - x; // キャラの中心から、その側の画面端まで
+  const edge = side < 0 ? x : WORLD.width - x;          // キャラの中心から、その側の画面端まで
+  const room = Math.max(edge - p.edgeMargin, MIN_ROOM); // 端の少し手前までを使える幅とする
   return room >= p.maxZone ? 1 : room / p.maxZone;
 }
 
