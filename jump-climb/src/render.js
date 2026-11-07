@@ -2,7 +2,7 @@
 // カメラの動きや補間は「見た目だけ」の話なので、ここで完結させる(simには影響しない)。
 
 import { WORLD } from './config.js';
-import { elapsedSeconds } from './sim.js';
+import { elapsedSeconds, zoneScale } from './sim.js';
 
 const W = WORLD.width;
 const H = WORLD.height;
@@ -70,30 +70,41 @@ export function createRenderer(canvas) {
 
   // 判定ゾーン: キャラの「下側」に、タップ位置ごとの範囲を縦帯で表示する。
   //   中央(緑)=真下をタップ→真上へ大ジャンプ
-  //   左右(黄)=左下をタップ→右上へ / 右下をタップ→左上へ(外側ほど濃く、線の位置で最大)
+  //   左右(黄)=左下をタップ→右上へ / 右下をタップ→左上へ。外側ほど濃く、線の位置で最大になり、
+  //            線より外側は画面の端まで最大の斜めのまま(濃さ一定)。
+  //   壁際では、画面端までの距離に合わせてその側が縮む(sim.js の zoneScale と同じ計算)。
   function drawZones(p, px, top) {
-    const dead = p.deadZone;
-    const maxZ = p.maxZone;
     const h = H - top;
     if (h <= 0) return;
-    ctx.fillStyle = 'rgba(110,231,160,0.14)';
-    ctx.fillRect(px - dead, top, dead * 2, h);
+    const side = {};
     for (const dir of [-1, 1]) {
+      const k = zoneScale(dir, px, p);
+      side[dir] = { dead: p.deadZone * k, max: p.maxZone * k };
+    }
+    ctx.fillStyle = 'rgba(110,231,160,0.14)';
+    ctx.fillRect(px - side[-1].dead, top, side[-1].dead + side[1].dead, h);
+    for (const dir of [-1, 1]) {
+      const { dead, max } = side[dir];
       const x0 = px + dir * dead;
-      const x1 = px + dir * maxZ;
+      const x1 = px + dir * max;
       const grad = ctx.createLinearGradient(x0, 0, x1, 0);
       grad.addColorStop(0, 'rgba(255,213,74,0.04)');
       grad.addColorStop(1, 'rgba(255,213,74,0.18)');
       ctx.fillStyle = grad;
       ctx.fillRect(Math.min(x0, x1), top, Math.abs(x1 - x0), h);
+      const edge = dir < 0 ? 0 : W;
+      ctx.fillStyle = 'rgba(255,213,74,0.18)'; // 線より外側(最大の斜めのまま)
+      ctx.fillRect(Math.min(x1, edge), top, Math.abs(edge - x1), h);
       ctx.fillStyle = 'rgba(255,213,74,0.35)';
       ctx.fillRect(x1 - 1, top, 2, h); // 最大の斜めになる位置の線
     }
-    const mid = (dead + maxZ) / 2;
     const ly = Math.min(H - 14, top + 26);
     text('↑真上', px, ly, 11, 'rgba(110,231,160,0.95)', 'center');
-    text('↗右上へ', px - mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
-    text('↖左上へ', px + mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
+    const l = side[-1];
+    const r = side[1];
+    // 壁際でゾーンが狭いときは、ラベルが重ならないよう出さない
+    if (l.max - l.dead >= 28) text('↗右上へ', px - (l.dead + l.max) / 2, ly, 11, 'rgba(255,213,74,0.95)', 'center');
+    if (r.max - r.dead >= 28) text('↖左上へ', px + (r.dead + r.max) / 2, ly, 11, 'rgba(255,213,74,0.95)', 'center');
   }
 
   function drawWorld(state, p, py, px, showZones) {

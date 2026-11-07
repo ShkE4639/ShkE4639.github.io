@@ -100,7 +100,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'ArrowRight' || e.code === 'KeyD') dx = -(p.deadZone + p.maxZone) / 2;
   if (dx === null) return;
   e.preventDefault();
-  input.push({ x: q(state.x + dx), y: q(WORLD.height * 0.6) });
+  input.push({ x: q(Math.min(WORLD.width, Math.max(0, state.x + dx))), y: q(WORLD.height * 0.6) });
 });
 
 createPanel({

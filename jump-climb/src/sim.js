@@ -43,9 +43,21 @@ export function deriveParams(values) {
 // タップ位置とキャラの横位置から、斜めの強さ(-1〜+1)を求める。
 // 0=真下(大ジャンプ)、+1=キャラの右下を最大にタップ、-1=左下を最大にタップ。
 // 跳ぶ向きはタップと反対側(左下をタップ→右上へ、右下をタップ→左上へ)。
-export function tiltFromDx(dx, p) {
-  const a = Math.abs(dx);
-  let n = (a - p.deadZone) / (p.maxZone - p.deadZone);
+//
+// 壁際の対策: タップ側の画面端までの距離が短いとき、その側のゾーン(不感帯・最大位置)を
+// 同じ割合で縮める。これで「画面の端をタップすれば、必ず最大の斜めになる」ので、
+// 壁にくっついても反対側へ離れられる。
+//   side: タップ側(-1=キャラの左側 / +1=右側)、x: キャラの横位置
+export function zoneScale(side, x, p) {
+  const room = side < 0 ? x : WORLD.width - x; // キャラの中心から、その側の画面端まで
+  return room >= p.maxZone ? 1 : room / p.maxZone;
+}
+
+export function tiltFromDx(dx, p, x) {
+  const k = zoneScale(dx < 0 ? -1 : 1, x, p);
+  const dead = p.deadZone * k;
+  const max = p.maxZone * k;
+  let n = (Math.abs(dx) - dead) / (max - dead);
   if (n < 0) n = 0;
   if (n > 1) n = 1;
   if (n === 0) return 0; // -0 にならないようにする
@@ -92,7 +104,7 @@ function doJump(s, p, tapX) {
     s.latenessCount++;
     if (s.lastJumpY !== null) s.lastGain = s.y - s.lastJumpY;
   }
-  const tilt = tiltFromDx(tapX - s.x, p);
+  const tilt = tiltFromDx(tapX - s.x, p, s.x);
   const n = tilt < 0 ? -tilt : tilt;
   s.lastJumpY = s.y;
   s.lastTilt = tilt;

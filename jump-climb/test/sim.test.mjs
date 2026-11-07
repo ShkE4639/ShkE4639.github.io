@@ -101,13 +101,13 @@ const values = defaultValues();
 // 6. 斜めの強さ(tilt)の計算: 不感帯30・最大110
 {
   const p = deriveParams(values);
-  assert.equal(tiltFromDx(0, p), 0);
-  assert.equal(tiltFromDx(30, p), 0);
-  assert.equal(tiltFromDx(-30, p), 0);
-  assert.equal(tiltFromDx(70, p), 0.5);
-  assert.equal(tiltFromDx(-70, p), -0.5);
-  assert.equal(tiltFromDx(110, p), 1);
-  assert.equal(tiltFromDx(300, p), 1);
+  assert.equal(tiltFromDx(0, p, 180), 0);
+  assert.equal(tiltFromDx(30, p, 180), 0);
+  assert.equal(tiltFromDx(-30, p, 180), 0);
+  assert.equal(tiltFromDx(70, p, 180), 0.5);
+  assert.equal(tiltFromDx(-70, p, 180), -0.5);
+  assert.equal(tiltFromDx(110, p, 180), 1);
+  assert.equal(tiltFromDx(300, p, 180), 1);
   console.log('OK  斜めの強さ: 不感帯内=0 / 中間=0.5 / 最大=1(左右対称)');
 }
 
@@ -142,7 +142,7 @@ const values = defaultValues();
   step(s, p, { x: 0, y: 400 }); // 左下を最大にタップ→右上へ。これを連続で出す
   for (let i = 0; i < 60 * 30 && !s.cleared; i++) {
     let tap = null;
-    if (s.onGround || (s.falling && s.fallSteps === 1)) tap = { x: s.x - 150, y: 400 };
+    if (s.onGround || (s.falling && s.fallSteps === 1)) tap = { x: Math.max(0, s.x - 150), y: 400 };
     step(s, p, tap);
     assert.ok(s.x <= p.xMax + 1e-9 && s.x >= p.xMin - 1e-9, `壁を越えた: ${s.x}`);
   }
@@ -170,7 +170,7 @@ const values = defaultValues();
   while (!s.cleared && s.step < 60 * 300) {
     let tap = null;
     if (s.phase === 'ready' || s.onGround || (s.falling && s.fallSteps === 2)) {
-      const x = Math.round((s.x + offsets[k++ % offsets.length]) * 10) / 10;
+      const x = Math.min(360, Math.max(0, Math.round((s.x + offsets[k++ % offsets.length]) * 10) / 10));
       tap = { x, y: 400 };
       taps.push({ s: s.step, ...tap });
     }
@@ -205,6 +205,33 @@ const values = defaultValues();
   const slow = play({ ...values, fallGravityMult: 0.6 }, 3);
   assert.ok(slow.s.cleared);
   console.log(`OK  落下の重さ0.6でもクリア可能: ${elapsedSeconds(slow.s).toFixed(2)}秒`);
+}
+
+// 14. 壁際: 端に近いと判定幅が縮み、画面の端をタップすれば必ず最大の斜めになる
+{
+  const p = deriveParams(values);
+  const right = tiltFromDx(360 - p.xMax, p, p.xMax); // 右の壁(x=344)で、右端(x=360)をタップ
+  assert.ok(right > 0.999, `右端: ${right}`);
+  const mid = tiltFromDx(8, p, p.xMax);
+  assert.ok(mid > 0 && mid < 1, `壁際の途中: ${mid}`);
+  assert.equal(tiltFromDx(0, p, p.xMax), 0);
+  assert.equal(tiltFromDx(-70, p, p.xMax), -0.5); // 反対側(左)は広いので縮まない
+  const left = tiltFromDx(0 - p.xMin, p, p.xMin); // 左の壁(x=16)で、左端(x=0)をタップ
+  assert.ok(left < -0.999, `左端: ${left}`);
+  // 実際に、右の壁際から画面の右端をタップして、左へ離れられる
+  const s = createState();
+  s.x = p.xMax; s.prevX = s.x;
+  step(s, p, { x: 360, y: 400 });
+  while (!s.falling) step(s, p, null);
+  assert.ok(s.x < p.xMax - 30, `壁から離れられない: ${s.x}`);
+  assert.ok(s.lastTilt > 0.999);
+  // 左の壁際も同様
+  const t = createState();
+  t.x = p.xMin; t.prevX = t.x;
+  step(t, p, { x: 0, y: 400 });
+  while (!t.falling) step(t, p, null);
+  assert.ok(t.x > p.xMin + 30, `壁から離れられない: ${t.x}`);
+  console.log(`OK  壁際でも、画面の端をタップすれば反対へ離れられる(右壁→x=${s.x.toFixed(0)}, 左壁→x=${t.x.toFixed(0)})`);
 }
 
 console.log(`\nすべて合格(調整項目 ${PARAM_DEFS.length} 個)`);
