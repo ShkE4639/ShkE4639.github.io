@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- スマホで拡大縮小されないようにする設定 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 検索結果に載りにくくするお願い(URLを知っている人は開ける) -->
+<meta name="robots" content="noindex">
+<title>連打プロトタイプ</title>
+<style>
+  /* ---- 画面全体の設定 ---- */
+  html, body { margin: 0; height: 100%; background: #111; overflow: hidden; overscroll-behavior: none; }
+
+  /* ゲーム画面。touch-action:none は「ダブルタップ拡大・スクロール」を止める(連打に必須) */
+  #game {
+    display: block;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---- 調整パネル(⚙ボタンで開閉) ---- */
+  #tuner-btn {
+    position: fixed; top: 8px; right: 8px; z-index: 10;
+    width: 44px; height: 44px; border: 0; border-radius: 22px;
+    background: rgba(255, 255, 255, .18); color: #fff; font-size: 22px;
+  }
+  #tuner-panel {
+    display: none;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+    max-height: 50vh; overflow-y: auto; box-sizing: border-box;
+    padding: 12px 14px 28px;
+    background: rgba(0, 0, 0, .88); color: #eee;
+    font: 14px/1.45 sans-serif;
+    touch-action: pan-y; /* パネル内は縦スクロールだけ許可 */
+  }
+  #tuner-panel.open { display: block; }
+  #tuner-panel h3 { margin: 16px 0 4px; font-size: 15px; color: #ffd166; }
+  #tuner-panel .row { margin: 10px 0 14px; }
+  #tuner-panel .row-head { display: flex; justify-content: space-between; }
+  #tuner-panel .val { color: #7fdbff; font-weight: bold; }
+  #tuner-panel input[type=range] { width: 100%; margin: 6px 0 2px; }
+  #tuner-panel .hint { color: #aaa; font-size: 12px; }
+  #tuner-panel button.reset { margin-top: 4px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<button id="tuner-btn" aria-label="調整パネル">⚙</button>
+<div id="tuner-panel"></div>
+
+<!-- 読み込み順が大事: 上のファイルほど「土台」。下のファイルが上のファイルを使う -->
+<script src="js/config.js"></script>   <!-- 調整値(全ファイルが使う) -->
+<script src="js/audio.js"></script>    <!-- 効果音 -->
+<script src="js/effects.js"></script>  <!-- 画面揺れ・ヒットストップ・火花 -->
+<script src="js/game.js"></script>     <!-- ゲーム本体(敵・プレイヤー・ヒット処理) -->
+<script src="js/input.js"></script>    <!-- タップ入力 -->
+<script src="js/tuner.js"></script>    <!-- 調整パネル -->
+<script src="js/main.js"></script>     <!-- 全部をつないで起動 -->
+</body>
+</html>
