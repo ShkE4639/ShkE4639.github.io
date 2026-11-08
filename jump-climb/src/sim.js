@@ -12,7 +12,6 @@
 import { STEP, WORLD } from './config.js';
 
 const EPS = 1e-9;
-const MIN_ROOM = 8; // 壁にくっついても、キャラの中心から最低これだけ離れた位置を「最大」にする(px)
 
 // 調整パネルの値(values)から、シミュレーション用の値を計算する。
 // 「高さ H」と「頂点までの時間 T」を決めると、重力と初速は自動で決まる:
@@ -35,10 +34,11 @@ export function deriveParams(values) {
     maxZone: Math.max(values.maxZone, values.deadZone + 10), // 不感帯より必ず広くする
     sideSpeed: values.sideSpeed,
     sideLoss: values.sideJumpLoss,
-    // 左右の壁(キャラの中心が動ける範囲)
-    xMin: half,
-    xMax: WORLD.width - half,
-    edgeMargin: values.edgeMargin,
+    // 左右の境界線(キャラはこの内側だけ動ける。線より外側のタップは最大の斜め)
+    lineL: values.wallInset,
+    lineR: WORLD.width - values.wallInset,
+    xMin: values.wallInset + half,                 // キャラの端が境界線に触れる位置
+    xMax: WORLD.width - values.wallInset - half,
   };
 }
 
@@ -46,22 +46,15 @@ export function deriveParams(values) {
 // 0=真下(大ジャンプ)、+1=キャラの右下を最大にタップ、-1=左下を最大にタップ。
 // 跳ぶ向きはタップと反対側(左下をタップ→右上へ、右下をタップ→左上へ)。
 //
-// 壁際の対策: タップ側の画面端までの距離が短いとき、その側のゾーン(不感帯・最大位置)を
-// 同じ割合で縮める。これで「画面の端をタップすれば、必ず最大の斜めになる」ので、
-// 壁にくっついても反対側へ離れられる。
-// 端ぴったりは押しづらいので、画面端の edgeMargin(px)手前を「最大」の位置にする。
-//   side: タップ側(-1=キャラの左側 / +1=右側)、x: キャラの横位置
-export function zoneScale(side, x, p) {
-  const edge = side < 0 ? x : WORLD.width - x;          // キャラの中心から、その側の画面端まで
-  const room = Math.max(edge - p.edgeMargin, MIN_ROOM); // 端の少し手前までを使える幅とする
-  return room >= p.maxZone ? 1 : room / p.maxZone;
-}
-
+// 左右の境界線(画面の端から wallInset の位置)より外側をタップしたときは、
+// キャラの位置に関係なく、常に最大の斜めになる(端ぴったりは指で押しづらいので、その代わり)。
+// 境界線の内側のタップは、キャラとのずれ(dx)で強さが決まる。
+//   dx: タップのx − キャラのx、x: キャラの横位置
 export function tiltFromDx(dx, p, x) {
-  const k = zoneScale(dx < 0 ? -1 : 1, x, p);
-  const dead = p.deadZone * k;
-  const max = p.maxZone * k;
-  let n = (Math.abs(dx) - dead) / (max - dead);
+  const tapX = x + dx;
+  if (tapX < p.lineL) return -1;
+  if (tapX > p.lineR) return 1;
+  let n = (Math.abs(dx) - p.deadZone) / (p.maxZone - p.deadZone);
   if (n < 0) n = 0;
   if (n > 1) n = 1;
   if (n === 0) return 0; // -0 にならないようにする

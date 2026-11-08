@@ -146,7 +146,7 @@ const values = defaultValues();
     step(s, p, tap);
     assert.ok(s.x <= p.xMax + 1e-9 && s.x >= p.xMin - 1e-9, `壁を越えた: ${s.x}`);
   }
-  near(s.x, WORLD.width - WORLD.playerSize / 2, 1e-6, '右の壁で止まったx');
+  near(s.x, p.xMax, 1e-6, '右の壁(境界線)で止まったx');
   console.log('OK  壁を越えない');
 }
 
@@ -207,46 +207,47 @@ const values = defaultValues();
   console.log(`OK  落下の重さ0.6でもクリア可能: ${elapsedSeconds(slow.s).toFixed(2)}秒`);
 }
 
-// 14. 壁際: 端に近いと判定幅が縮み、画面の端をタップすれば必ず最大の斜めになる
+// 14. 境界線: 線より外側のタップは、キャラの位置に関係なく常に最大の斜め。壁際からも離れられる
 {
   const p = deriveParams(values);
-  const right = tiltFromDx(360 - p.xMax, p, p.xMax); // 右の壁(x=344)で、右端(x=360)をタップ
-  assert.ok(right > 0.999, `右端: ${right}`);
-  const mid = tiltFromDx(4, p, p.xMax);
-  assert.ok(mid > 0 && mid < 1, `壁際の途中: ${mid}`);
-  assert.equal(tiltFromDx(0, p, p.xMax), 0);
-  assert.equal(tiltFromDx(-70, p, p.xMax), -0.5); // 反対側(左)は広いので縮まない
-  const left = tiltFromDx(0 - p.xMin, p, p.xMin); // 左の壁(x=16)で、左端(x=0)をタップ
-  assert.ok(left < -0.999, `左端: ${left}`);
-  // 実際に、右の壁際から画面の右端をタップして、左へ離れられる
+  assert.equal(p.lineL, 30);
+  assert.equal(p.lineR, 330);
+  assert.equal(p.xMin, 30 + WORLD.playerSize / 2); // キャラの端が線に触れる位置まで
+  assert.equal(p.xMax, 330 - WORLD.playerSize / 2);
+  // 右の境界線(x=330)の外側(x=335)をタップ → 最大(キャラがx=250でも。線の内側ならdx=85で約0.69)
+  assert.equal(tiltFromDx(335 - 250, p, 250), 1);
+  assert.ok(tiltFromDx(325 - 250, p, 250) < 1); // 線の内側は、強さが連続的に変わる
+  // 左も同様
+  assert.equal(tiltFromDx(25 - 110, p, 110), -1);
+  assert.ok(tiltFromDx(35 - 110, p, 110) > -1);
+  // 実際に、右の壁際から、線の外側(x=340)をタップして、左へ離れられる
   const s = createState();
   s.x = p.xMax; s.prevX = s.x;
-  step(s, p, { x: 360, y: 400 });
+  step(s, p, { x: 340, y: 400 });
   while (!s.falling) step(s, p, null);
   assert.ok(s.x < p.xMax - 30, `壁から離れられない: ${s.x}`);
-  assert.ok(s.lastTilt > 0.999);
+  assert.equal(s.lastTilt, 1);
   // 左の壁際も同様
-  const t = createState();
-  t.x = p.xMin; t.prevX = t.x;
-  step(t, p, { x: 0, y: 400 });
-  while (!t.falling) step(t, p, null);
-  assert.ok(t.x > p.xMin + 30, `壁から離れられない: ${t.x}`);
-  console.log(`OK  壁際でも、画面の端をタップすれば反対へ離れられる(右壁→x=${s.x.toFixed(0)}, 左壁→x=${t.x.toFixed(0)})`);
+  const u = createState();
+  u.x = p.xMin; u.prevX = u.x;
+  step(u, p, { x: 20, y: 400 });
+  while (!u.falling) step(u, p, null);
+  assert.ok(u.x > p.xMin + 30, `壁から離れられない: ${u.x}`);
+  console.log(`OK  境界線の外側をタップすれば、壁際からも離れられる(右壁→x=${s.x.toFixed(0)}, 左壁→x=${u.x.toFixed(0)})`);
 }
 
-// 15. 端の余白: 画面の端から20px手前をタップすれば、最大の斜めになる(端ぴったりは不要)
+// 15. 境界線の位置は変えられる。0なら画面の端ぴったり
 {
-  const p = deriveParams(values);
-  assert.equal(p.edgeMargin, 20);
-  // 右寄り(x=300)で、右端から20px手前(x=340)をタップ → 最大
-  assert.ok(tiltFromDx(340 - 300, p, 300) > 0.999);
-  // 右端から40px手前(x=320)は、まだ最大ではない
-  assert.ok(tiltFromDx(320 - 300, p, 300) < 1);
-  // 余白0なら、端ぴったり(x=360)でないと最大にならない
-  const p0 = deriveParams({ ...values, edgeMargin: 0 });
-  assert.ok(tiltFromDx(340 - 300, p0, 300) < 0.999);
-  assert.ok(tiltFromDx(360 - 300, p0, 300) > 0.999);
-  console.log('OK  端の余白: 20px手前で最大 / 余白0なら端ぴったり');
+  const p0 = deriveParams({ ...values, wallInset: 0 });
+  assert.equal(p0.lineL, 0);
+  assert.equal(p0.lineR, 360);
+  assert.equal(p0.xMin, WORLD.playerSize / 2);
+  assert.ok(tiltFromDx(335 - 250, p0, 250) < 1); // 画面の中には「外側」がないので、通常の判定
+  const p50 = deriveParams({ ...values, wallInset: 50 });
+  assert.equal(p50.lineR, 310);
+  assert.equal(tiltFromDx(315 - 250, p50, 250), 1); // 線(x=310)の外側は最大
+  assert.ok(tiltFromDx(305 - 250, p50, 250) < 1);  // 線の内側は連続的
+  console.log('OK  境界線の位置を変えられる');
 }
 
 console.log(`\nすべて合格(調整項目 ${PARAM_DEFS.length} 個)`);

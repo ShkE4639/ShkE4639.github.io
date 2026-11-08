@@ -2,7 +2,7 @@
 // カメラの動きや補間は「見た目だけ」の話なので、ここで完結させる(simには影響しない)。
 
 import { WORLD } from './config.js';
-import { elapsedSeconds, zoneScale } from './sim.js';
+import { elapsedSeconds } from './sim.js';
 
 const W = WORLD.width;
 const H = WORLD.height;
@@ -68,43 +68,61 @@ export function createRenderer(canvas) {
     ctx.fillText(str, x, y);
   }
 
-  // 判定ゾーン: キャラの「下側」に、タップ位置ごとの範囲を縦帯で表示する。
+  // 左右の境界線。キャラは線の内側だけ動ける。線の外側(画面の端側)をタップすると最大の斜めジャンプ。
+  function drawWalls(p, showArrows) {
+    const L = p.lineL;
+    const R = p.lineR;
+    ctx.fillStyle = 'rgba(255,213,74,0.10)';
+    ctx.fillRect(0, 0, L, H);
+    ctx.fillRect(R, 0, W - R, H);
+    ctx.fillStyle = 'rgba(255,213,74,0.55)';
+    ctx.fillRect(L - 1, 0, 2, H);
+    ctx.fillRect(R - 1, 0, 2, H);
+    if (showArrows && L >= 14) {
+      text('↗', L / 2, H - 14, 13, 'rgba(255,213,74,0.95)', 'center'); // 左の外側をタップ→右上へ
+      text('↖', R + (W - R) / 2, H - 14, 13, 'rgba(255,213,74,0.95)', 'center');
+    }
+  }
+
+  // 判定ゾーン: キャラの「下側」に、タップ位置ごとの範囲を縦帯で表示する(境界線の内側だけ)。
   //   中央(緑)=真下をタップ→真上へ大ジャンプ
   //   左右(黄)=左下をタップ→右上へ / 右下をタップ→左上へ。外側ほど濃く、線の位置で最大になり、
-  //            線より外側は画面の端まで最大の斜めのまま(濃さ一定)。
-  //   壁際では、画面端までの距離に合わせてその側が縮む(sim.js の zoneScale と同じ計算)。
+  //            そこから境界線までは最大のまま。
   function drawZones(p, px, top) {
     const h = H - top;
     if (h <= 0) return;
-    const side = {};
-    for (const dir of [-1, 1]) {
-      const k = zoneScale(dir, px, p);
-      side[dir] = { dead: p.deadZone * k, max: p.maxZone * k };
-    }
+    const L = p.lineL;
+    const R = p.lineR;
+    const cl = (v) => Math.min(R, Math.max(L, v));
+    const gx0 = cl(px - p.deadZone);
+    const gx1 = cl(px + p.deadZone);
     ctx.fillStyle = 'rgba(110,231,160,0.14)';
-    ctx.fillRect(px - side[-1].dead, top, side[-1].dead + side[1].dead, h);
+    ctx.fillRect(gx0, top, gx1 - gx0, h);
     for (const dir of [-1, 1]) {
-      const { dead, max } = side[dir];
-      const x0 = px + dir * dead;
-      const x1 = px + dir * max;
-      const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-      grad.addColorStop(0, 'rgba(255,213,74,0.04)');
-      grad.addColorStop(1, 'rgba(255,213,74,0.18)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(Math.min(x0, x1), top, Math.abs(x1 - x0), h);
-      const edge = dir < 0 ? 0 : W;
-      ctx.fillStyle = 'rgba(255,213,74,0.18)'; // 線より外側(最大の斜めのまま)
-      ctx.fillRect(Math.min(x1, edge), top, Math.abs(edge - x1), h);
-      ctx.fillStyle = 'rgba(255,213,74,0.35)';
-      ctx.fillRect(x1 - 1, top, 2, h); // 最大の斜めになる位置の線
+      const x0 = cl(px + dir * p.deadZone);
+      const x1 = cl(px + dir * p.maxZone);
+      if (x0 !== x1) {
+        const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+        grad.addColorStop(0, 'rgba(255,213,74,0.04)');
+        grad.addColorStop(1, 'rgba(255,213,74,0.18)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(Math.min(x0, x1), top, Math.abs(x1 - x0), h);
+      }
+      const wall = dir < 0 ? L : R;
+      ctx.fillStyle = 'rgba(255,213,74,0.18)'; // 最大の位置から境界線まで(最大のまま)
+      ctx.fillRect(Math.min(x1, wall), top, Math.abs(wall - x1), h);
+      const lineX = px + dir * p.maxZone;
+      if (lineX > L && lineX < R) {
+        ctx.fillStyle = 'rgba(255,213,74,0.35)';
+        ctx.fillRect(lineX - 1, top, 2, h); // 最大の斜めになる位置の線
+      }
     }
     const ly = Math.min(H - 14, top + 26);
     text('↑真上', px, ly, 11, 'rgba(110,231,160,0.95)', 'center');
-    const l = side[-1];
-    const r = side[1];
-    // 壁際でゾーンが狭いときは、ラベルが重ならないよう出さない
-    if (l.max - l.dead >= 28) text('↗右上へ', px - (l.dead + l.max) / 2, ly, 11, 'rgba(255,213,74,0.95)', 'center');
-    if (r.max - r.dead >= 28) text('↖左上へ', px + (r.dead + r.max) / 2, ly, 11, 'rgba(255,213,74,0.95)', 'center');
+    const mid = (p.deadZone + p.maxZone) / 2;
+    // 境界線の外にはみ出すラベルは出さない
+    if (px - mid > L + 16) text('↗右上へ', px - mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
+    if (px + mid < R - 16) text('↖左上へ', px + mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
   }
 
   function drawWorld(state, p, py, px, showZones) {
@@ -124,6 +142,9 @@ export function createRenderer(canvas) {
       ctx.stroke();
       if (h >= 0 && major) text(`${h}`, W - 6, sy(h) - 4, 11, 'rgba(255,255,255,0.5)', 'right');
     }
+
+    // 境界線と、その外側の「最大の斜め」エリア(壁なので常に表示)
+    drawWalls(p, showZones);
 
     // 判定ゾーン(キャラの後ろに描く)
     if (showZones && state.phase !== 'cleared') drawZones(p, px, sy(py));
