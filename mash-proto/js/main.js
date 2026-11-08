@@ -32,8 +32,13 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// 画面上の位置(px) → ゲーム内座標。タップした場所に火花を出すために使う
+function toWorld(clientX, clientY) {
+  return { x: clientX / view.cssScale, y: clientY / view.cssScale };
+}
+
 Tuner.init();   // 先に調整パネルを用意(Input が技の選択時にパネルを切り替えるため)
-Input.init(document.getElementById('moves'), canvas);
+Input.init(document.getElementById('moves'), canvas, toWorld);
 
 // ---- 毎フレームのループ ----
 let lastTime = performance.now();

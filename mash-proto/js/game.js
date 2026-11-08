@@ -41,7 +41,8 @@ const Game = {
 
   // ★ 技が出た瞬間の処理(手触りの中心)
   // id: 技のid / level: 溜め技の溜まり具合(0〜1)。溜め技以外は使わない
-  attack(id, level = 1) {
+  // pos: タップした位置 {x, y}。火花と数字はここから出る。null なら敵の位置から出る
+  attack(id, level = 1, pos = null) {
     const now = performance.now();
     if (now < this.lockUntil) return false; // 硬直中は出せない
 
@@ -62,10 +63,10 @@ const Game = {
     // 「迫力」と溜め具合を掛けたものが、演出全体の強さ
     const scale = m.power * charge;
 
-    // 当たった位置(敵の左端あたり)。火花と数字はここから出す
+    // 火花と数字を出す位置: タップした場所。位置がないとき(キーボード操作)は敵の左端あたり
     const e = this.enemy;
-    const hx = e.x + e.offsetX - e.w / 2;
-    const hy = e.y + (Math.random() * 60 - 30);
+    const hx = pos ? pos.x : e.x + e.offsetX - e.w / 2;
+    const hy = pos ? pos.y : e.y + (Math.random() * 60 - 30);
 
     // --- 演出(それぞれの強さは config.js / ⚙パネルで調整) ---
     Effects.shake(m.shakePower * scale, m.shakeDecay);                                    // 画面揺れ
@@ -100,13 +101,14 @@ const Game = {
     return Math.min(1, (performance.now() - this.charging.startAt) / m.chargeMaxMs);
   },
   // 指を離した → 溜めた分の威力で技を出す
-  releaseCharge() {
+  // pos: 指を離した位置(火花の出る場所)
+  releaseCharge(pos = null) {
     if (!this.charging) return;
     const level = this.chargeLevel();
     const id = this.charging.id;
     this.charging = null;
     GameAudio.stopCharge();
-    this.attack(id, level);
+    this.attack(id, level, pos);
   },
 
   update(realDt) {
