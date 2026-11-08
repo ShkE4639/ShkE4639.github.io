@@ -85,7 +85,11 @@ function frame(now) {
     if (n === MAX_STEPS_PER_FRAME) acc = 0;
   }
   if (result) result.canRetry = performance.now() - finishedAt > RETRY_DELAY_MS;
-  renderer.draw({ state, p, alpha: acc / STEP, frameDt, result, showZones: values.showZones === 1 });
+  renderer.draw({
+    state, p, alpha: acc / STEP, frameDt, result,
+    showZones: values.showZones === 1,
+    showMarkers: values.showTapMarker === 1,
+  });
   requestAnimationFrame(frame);
 }
 

@@ -198,7 +198,8 @@ export function createRenderer(canvas) {
     }
   }
 
-  function drawMarkers() {
+  function drawMarkers(show) {
+    if (!show) { markers.length = 0; return; }
     const now = performance.now();
     for (let i = markers.length - 1; i >= 0; i--) {
       const age = now - markers[i].t;
@@ -252,12 +253,12 @@ export function createRenderer(canvas) {
   }
 
   // 1フレーム描く。alpha = 「次のステップまでどれだけ進んだか」(0〜1)で、動きを滑らかにする。
-  function draw({ state, p, alpha, frameDt, result, showZones }) {
+  function draw({ state, p, alpha, frameDt, result, showZones, showMarkers }) {
     const py = state.prevY + (state.y - state.prevY) * alpha;
     const px = state.prevX + (state.x - state.prevX) * alpha;
     camY += (py - camY) * (1 - Math.exp(-frameDt * 12)); // カメラはなめらかに追従
     drawWorld(state, p, py, px, showZones);
-    drawMarkers();
+    drawMarkers(showMarkers);
     drawHud(state, p);
     if (state.phase === 'ready') drawReady();
     if (result) drawResult(result);

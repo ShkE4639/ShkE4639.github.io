@@ -92,6 +92,13 @@ export const PARAM_DEFS = [
     down: '(0)実際の見た目に近い。指の位置感覚だけで狙う練習になる。',
   },
   {
+    key: 'showTapMarker', label: 'タップの目印', unit: '',
+    min: 0, max: 1, step: 1, def: 1,
+    about: 'タップした場所に出る白い輪の有無。1=表示、0=非表示。',
+    up: '(1)どこを押したか分かる。',
+    down: '(0)実際の見た目に近い。キャラの動きだけで、押した位置を判断する練習になる。',
+  },
+  {
     key: 'useObstacles', label: '障害物', unit: '',
     min: 0, max: 1, step: 1, def: 1,
     about: '赤いブロックの有無。上昇中だけ当たる(下から=頭をぶつけて落ちる、横から=止まる)。落下中は通り抜ける。配置は src/stage.js。',
