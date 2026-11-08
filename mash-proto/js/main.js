@@ -3,7 +3,7 @@
 // ============================================================
 // 各ファイルをつなぐだけ。ゲームの中身(ルール・演出)はここに書かない。
 //
-//   画面サイズ合わせ → 入力の準備 → 調整パネルの準備 → ループ開始
+//   画面サイズ合わせ → 技ボタンの準備 → 調整パネルの準備 → ループ開始
 //   ループ: 時間を進める(Game.update) → 描く(Game.draw) を毎フレーム繰り返す
 
 const canvas = document.getElementById('game');
@@ -32,12 +32,7 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// 画面上の位置 → ゲーム内座標
-function toWorld(clientX, clientY) {
-  return { x: clientX / view.cssScale, y: clientY / view.cssScale };
-}
-
-Input.init(canvas, toWorld, (x, y) => Game.hit(x, y));
+Input.init(document.getElementById('moves'));
 Tuner.init();
 
 // ---- 毎フレームのループ ----

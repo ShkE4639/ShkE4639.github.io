@@ -10,6 +10,7 @@
 <style>
   /* ---- 画面全体の設定 ---- */
   html, body { margin: 0; height: 100%; background: #111; overflow: hidden; overscroll-behavior: none; }
+  :root { --bar: calc(104px + env(safe-area-inset-bottom)); } /* 技ボタンの帯の高さ */
 
   /* ゲーム画面。touch-action:none は「ダブルタップ拡大・スクロール」を止める(連打に必須) */
   #game {
@@ -20,7 +21,26 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* ---- 調整パネル(⚙ボタンで開閉) ---- */
+  /* ---- 技ボタン(画面下) ---- */
+  #moves {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    display: flex; gap: 8px; box-sizing: border-box;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    touch-action: none;
+  }
+  .move-btn {
+    flex: 1; height: 84px; border: 0; border-radius: 14px;
+    background: var(--c); color: #111;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font: bold 22px sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, .35);
+  }
+  .move-btn small { font-size: 11px; font-weight: normal; opacity: .7; margin-top: 2px; }
+  .move-btn.down { filter: brightness(1.35); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+
+  /* ---- 調整パネル(⚙ボタンで開閉。技ボタンの上に出る) ---- */
   #tuner-btn {
     position: fixed; top: 8px; right: 8px; z-index: 10;
     width: 44px; height: 44px; border: 0; border-radius: 22px;
@@ -28,34 +48,46 @@
   }
   #tuner-panel {
     display: none;
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
-    max-height: 50vh; overflow-y: auto; box-sizing: border-box;
-    padding: 12px 14px 28px;
-    background: rgba(0, 0, 0, .88); color: #eee;
+    position: fixed; left: 0; right: 0; bottom: var(--bar); z-index: 9;
+    max-height: 44vh; overflow-y: auto; box-sizing: border-box;
+    padding: 10px 14px 20px;
+    background: rgba(0, 0, 0, .9); color: #eee;
     font: 14px/1.45 sans-serif;
     touch-action: pan-y; /* パネル内は縦スクロールだけ許可 */
   }
   #tuner-panel.open { display: block; }
-  #tuner-panel h3 { margin: 16px 0 4px; font-size: 15px; color: #ffd166; }
+  #tuner-panel .guide { color: #bbb; font-size: 12px; margin-bottom: 8px; }
+  #tuner-panel .tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+  #tuner-panel .tab {
+    flex: 1; padding: 8px 0; border: 2px solid var(--c); border-radius: 8px;
+    background: transparent; color: #eee; font-weight: bold;
+  }
+  #tuner-panel .tab.active { background: var(--c); color: #111; }
+  #tuner-panel h3 { margin: 14px 0 4px; font-size: 14px; color: #ffd166; }
   #tuner-panel .row { margin: 10px 0 14px; }
-  #tuner-panel .row-head { display: flex; justify-content: space-between; }
-  #tuner-panel .val { color: #7fdbff; font-weight: bold; }
+  #tuner-panel .row-head { display: flex; justify-content: space-between; gap: 8px; }
+  #tuner-panel .val { color: #7fdbff; font-weight: bold; white-space: nowrap; }
   #tuner-panel input[type=range] { width: 100%; margin: 6px 0 2px; }
   #tuner-panel .hint { color: #aaa; font-size: 12px; }
-  #tuner-panel button.reset { margin-top: 4px; padding: 8px 12px; }
+  #tuner-panel details { margin-top: 6px; }
+  #tuner-panel summary { padding: 8px 0; color: #7fdbff; }
+  #tuner-panel .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  #tuner-panel .actions button { padding: 8px 12px; }
+  #tuner-panel textarea { width: 100%; box-sizing: border-box; margin-top: 6px; font-size: 11px; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="moves"></div>
 <button id="tuner-btn" aria-label="調整パネル">⚙</button>
 <div id="tuner-panel"></div>
 
 <!-- 読み込み順が大事: 上のファイルほど「土台」。下のファイルが上のファイルを使う -->
-<script src="js/config.js"></script>   <!-- 調整値(全ファイルが使う) -->
+<script src="js/config.js"></script>   <!-- 技の一覧と調整値(全ファイルが使う) -->
 <script src="js/audio.js"></script>    <!-- 効果音 -->
 <script src="js/effects.js"></script>  <!-- 画面揺れ・ヒットストップ・火花 -->
-<script src="js/game.js"></script>     <!-- ゲーム本体(敵・プレイヤー・ヒット処理) -->
-<script src="js/input.js"></script>    <!-- タップ入力 -->
+<script src="js/game.js"></script>     <!-- ゲーム本体(敵・プレイヤー・技の処理) -->
+<script src="js/input.js"></script>    <!-- 技ボタンと入力 -->
 <script src="js/tuner.js"></script>    <!-- 調整パネル -->
 <script src="js/main.js"></script>     <!-- 全部をつないで起動 -->
 </body>
