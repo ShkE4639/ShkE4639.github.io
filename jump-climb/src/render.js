@@ -125,6 +125,21 @@ export function createRenderer(canvas) {
     if (px + mid < R - 16) text('↖左上へ', px + mid, ly, 11, 'rgba(255,213,74,0.95)', 'center');
   }
 
+  // 障害物(赤いブロック)。上昇中だけ当たり、落下中は通り抜ける。
+  function drawObstacles(p) {
+    for (const o of p.obstacles) {
+      const top = sy(o.y + o.h);
+      const bottom = sy(o.y);
+      if (bottom < -20 || top > H + 20) continue; // 画面の外は描かない
+      ctx.fillStyle = '#b8465e';
+      ctx.fillRect(o.x, top, o.w, bottom - top);
+      ctx.fillStyle = '#e8708a';
+      ctx.fillRect(o.x, top, o.w, 3);          // 上の面
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(o.x, bottom - 3, o.w, 3);   // 下の面(ここに頭をぶつける)
+    }
+  }
+
   function drawWorld(state, p, py, px, showZones) {
     ctx.fillStyle = '#1b2236';
     ctx.fillRect(0, 0, W, H);
@@ -145,6 +160,9 @@ export function createRenderer(canvas) {
 
     // 境界線と、その外側の「最大の斜め」エリア(壁なので常に表示)
     drawWalls(p, showZones);
+
+    // 障害物
+    drawObstacles(p);
 
     // 判定ゾーン(キャラの後ろに描く)
     if (showZones && state.phase !== 'cleared') drawZones(p, px, sy(py));
@@ -217,6 +235,7 @@ export function createRenderer(canvas) {
     text('真下=真上へ / 左下=右上へ / 右下=左上へ', W / 2, y + 50, 13, '#ffd54a', 'center');
     text('緑=いまタップ有効 / 橙=無効', W / 2, y + 72, 13, '#cfd6e6', 'center');
     text('右上の「調整」で数値を変えられます', W / 2, y + 94, 13, '#cfd6e6', 'center');
+    text('赤いブロック: 上昇中だけ当たる(落下中は通り抜け)', W / 2, y + 116, 12, '#ff9fb2', 'center');
   }
 
   function drawResult(result) {

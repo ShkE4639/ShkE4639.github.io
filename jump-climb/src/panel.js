@@ -16,7 +16,7 @@ function el(tag, props = {}, ...children) {
 
 function formatValue(def, v) {
   if (def.key === 'fallWindowSec' && v === 0) return '無制限';
-  if (def.key === 'showZones') return v ? 'ON' : 'OFF';
+  if (def.key === 'showZones' || def.key === 'useObstacles') return v ? 'ON' : 'OFF';
   return `${v}${def.unit}`;
 }
 

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { STEP, WORLD, PARAM_DEFS, defaultValues, sanitizeValues } from '../src/config.js';
 import { deriveParams, tiltFromDx, createState, step, runLog, elapsedSeconds } from '../src/sim.js';
+import { OBSTACLES, buildObstacles } from '../src/stage.js';
 
 const TAP = { x: 180, y: 400 }; // キャラの真下(キャラの初期位置は x=180)
 
@@ -39,7 +40,8 @@ function jumpToApex(values, tapX) {
   return { p, s, peak };
 }
 
-const values = defaultValues();
+// 物理の基本テストは障害物なしで行う(障害物は下の専用テストで確認する)
+const values = { ...defaultValues(), useObstacles: 0 };
 
 // 1. 1回のジャンプの頂点が「ジャンプの高さ」(160px)になっている
 {
@@ -191,6 +193,7 @@ const values = defaultValues();
   assert.equal(v.jumpHeight, 200);
   assert.equal(v.deadZone, 30);
   assert.equal(v.showZones, 1);
+  assert.equal(v.useObstacles, 1);
   const crazy = sanitizeValues({ deadZone: 9999, fallGravityMult: -5 });
   assert.equal(crazy.deadZone, 80);
   assert.equal(crazy.fallGravityMult, 0.6);
@@ -248,6 +251,92 @@ const values = defaultValues();
   assert.equal(tiltFromDx(315 - 250, p50, 250), 1); // 線(x=310)の外側は最大
   assert.ok(tiltFromDx(305 - 250, p50, 250) < 1);  // 線の内側は連続的
   console.log('OK  境界線の位置を変えられる');
+}
+
+// 16. 障害物(下から): 上昇中にブロックの下の面へ頭をぶつけて、上昇が止まり、落ち始める
+{
+  const p = deriveParams(values);
+  p.obstacles = [{ x: 100, y: 100, w: 160, h: 24 }]; // キャラ(x=180)の真上に張り出したブロック
+  const s = createState();
+  step(s, p, TAP);
+  while (!s.falling) step(s, p, null);
+  assert.equal(s.y, 100 - WORLD.playerSize); // 頭がブロックの下の面に当たった高さ
+  assert.equal(s.vy, 0);
+  while (!s.onGround) step(s, p, null);
+  assert.equal(s.y, 0);
+  console.log('OK  障害物(下から): 頭をぶつけて落ち始める');
+}
+
+// 17. 障害物(落下中): 通り抜けて、地面まで落ちる(上には乗れない)
+{
+  const p = deriveParams(values);
+  p.obstacles = [{ x: 150, y: 100, w: 60, h: 24 }];
+  const s = createState();
+  s.phase = 'running'; s.onGround = false; s.falling = true;
+  s.y = 300; s.prevY = 300; s.vy = -1;
+  for (let i = 0; i < 600 && !s.onGround; i++) step(s, p, null);
+  assert.ok(s.onGround);
+  assert.equal(s.y, 0);
+  console.log('OK  障害物(落下中): 通り抜ける');
+}
+
+// 18. 障害物(横から): 上昇中に横から当たると、ブロックの手前で止まる
+{
+  const p = deriveParams(values);
+  p.obstacles = [{ x: 200, y: 20, w: 100, h: 100 }];
+  const s = createState();
+  step(s, p, { x: 60, y: 400 }); // キャラ(x=180)の左下をタップ → 右上へ
+  while (!s.falling) step(s, p, null);
+  assert.equal(s.x, 200 - WORLD.playerSize / 2); // ブロックの左の面に、キャラの右端が触れる位置
+  assert.equal(s.vx, 0);
+  console.log('OK  障害物(横から): 手前で止まる');
+}
+
+// 19. ステージの配置が正しい(隙間がある・高さが順番・OFFなら無し)
+{
+  const p = deriveParams({ ...values, useObstacles: 1 });
+  assert.ok(p.obstacles.length >= 8);
+  for (const o of p.obstacles) {
+    assert.ok(o.x >= p.lineL - 1e-9 && o.x + o.w <= p.lineR + 1e-9, `境界線の外にはみ出し: ${JSON.stringify(o)}`);
+    assert.ok(p.lineR - p.lineL - o.w >= WORLD.playerSize + 16, `通れる隙間がない: ${JSON.stringify(o)}`);
+  }
+  for (let i = 1; i < OBSTACLES.length; i++) assert.ok(OBSTACLES[i].y > OBSTACLES[i - 1].y + 150, '間隔が狭い');
+  assert.equal(deriveParams({ ...values, useObstacles: 0 }).obstacles.length, 0);
+  // 境界線の位置を変えても、ブロックは境界線に合わせて動く
+  const wide = buildObstacles(10, 350);
+  assert.equal(wide[0].x, 10);
+  assert.equal(wide[1].x + wide[1].w, 350);
+  console.log(`OK  ステージの配置: ${p.obstacles.length}個、隙間・順番とも問題なし`);
+}
+
+// 20. 解けるか: 簡単なボットが、障害物をよけてゴールまで登れる(ログの再生も一致する)
+{
+  const p = deriveParams({ ...values, useObstacles: 1 });
+  const half = WORLD.playerSize / 2;
+  const s = createState();
+  const taps = [];
+  while (!s.cleared && s.step < 60 * 180) {
+    let tap = null;
+    const canTap = s.phase === 'ready' || s.onGround || (s.falling && s.fallSteps === 1);
+    if (canTap) {
+      // 頭より上にある一番近いブロックを探し、空いている側へ寄る
+      const o = p.obstacles.find((q) => q.y + q.h > s.y);
+      let x = s.x; // 既定: 真下をタップ(真上へ跳ぶ)
+      if (o) {
+        const fromLeft = o.x <= p.lineL + 1e-9; // 左の壁から張り出している=右側が空き
+        if (fromLeft && s.x < o.x + o.w + half + 4) x = 0;   // 右へ(境界線の外側をタップ)
+        if (!fromLeft && s.x > o.x - half - 4) x = 360;      // 左へ
+      }
+      tap = { x, y: 400 };
+      taps.push({ s: s.step, ...tap });
+    }
+    step(s, p, tap);
+  }
+  assert.ok(s.cleared, `ボットがクリアできない(高さ ${s.y.toFixed(0)})`);
+  const replay = runLog(p, taps);
+  assert.equal(replay.finishStep, s.finishStep);
+  assert.equal(replay.x, s.x);
+  console.log(`OK  ボットがゴールまで登れる: ${elapsedSeconds(s).toFixed(1)}秒, ${s.jumps}回のジャンプ(障害物なしの完璧は約10秒)`);
 }
 
 console.log(`\nすべて合格(調整項目 ${PARAM_DEFS.length} 個)`);

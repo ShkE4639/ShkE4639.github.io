@@ -10,6 +10,7 @@
 //       描画側で上下を反転する。画面の横幅=世界の横幅なので、タップの x がそのまま使える。
 
 import { STEP, WORLD } from './config.js';
+import { buildObstacles } from './stage.js';
 
 const EPS = 1e-9;
 
@@ -37,6 +38,10 @@ export function deriveParams(values) {
     // 左右の境界線(キャラはこの内側だけ動ける。線より外側のタップは最大の斜め)
     lineL: values.wallInset,
     lineR: WORLD.width - values.wallInset,
+    // 障害物(ステージの高さより上にあるものは使わない)
+    obstacles: values.useObstacles === 1
+      ? buildObstacles(values.wallInset, WORLD.width - values.wallInset).filter((o) => o.y < values.stageHeight)
+      : [],
     xMin: values.wallInset + half,                 // キャラの端が境界線に触れる位置
     xMax: WORLD.width - values.wallInset - half,
   };
@@ -114,6 +119,35 @@ function doJump(s, p, tapX) {
   s.jumps++;
 }
 
+// 障害物との当たり。呼ぶのは「上昇中」だけ(落下中は通り抜ける)。
+// 前のステップの位置(prevX, prevY)と、いまの位置を比べて、どこから当たったかを決める。
+//   横から: 前は横に離れていて、いま重なった → ブロックの手前で止める(横速度を0に)
+//   下から: 前は頭がブロックの下にあって、いま入り込んだ → 頭をぶつけて上昇が止まる(落ち始める)
+// 前のステップですでに重なっていた場合(落下中に通り抜けて、中でジャンプした場合など)は、
+// どちらにも当たらない。
+function collideObstacles(s, p) {
+  const half = WORLD.playerSize / 2;
+  const size = WORLD.playerSize;
+  const prevL = s.prevX - half;
+  const prevR = s.prevX + half;
+  const prevB = s.prevY;
+  const prevT = s.prevY + size;
+  for (const o of p.obstacles) {
+    const oR = o.x + o.w;
+    const oT = o.y + o.h;
+    // 1. 横
+    if (prevT > o.y && prevB < oT) {
+      if (prevR <= o.x + EPS && s.x + half > o.x) { s.x = o.x - half; s.vx = 0; }
+      else if (prevL >= oR - EPS && s.x - half < oR) { s.x = oR + half; s.vx = 0; }
+    }
+    // 2. 下から
+    if (prevT <= o.y + EPS && s.y + size > o.y && s.x + half > o.x && s.x - half < oR) {
+      s.y = o.y - size;
+      s.vy = 0;
+    }
+  }
+}
+
 // 1ステップ(1/60秒)進める。tap は { x, y } か null。(y は今は使わない)
 export function step(s, p, tap) {
   if (s.cleared) return;
@@ -138,7 +172,8 @@ export function step(s, p, tap) {
 
   // 2. 物理(等加速度運動を厳密に1ステップ進める)
   if (!s.onGround) {
-    const g = s.vy > 0 ? p.g : p.gFall;
+    const rising = s.vy > 0;
+    const g = rising ? p.g : p.gFall;
     s.y += s.vy * STEP - 0.5 * g * STEP * STEP;
     s.vy -= g * STEP;
     if (s.vy < -p.maxFall) s.vy = -p.maxFall;
@@ -147,6 +182,9 @@ export function step(s, p, tap) {
     s.x += s.vx * STEP;
     if (s.x < p.xMin) { s.x = p.xMin; s.vx = 0; }
     if (s.x > p.xMax) { s.x = p.xMax; s.vx = 0; }
+
+    // 障害物(上昇中だけ当たる。落下中は通り抜ける)
+    if (rising) collideObstacles(s, p);
 
     // 頂点を過ぎた瞬間
     if (!s.falling && s.vy <= EPS) {

@@ -92,6 +92,13 @@ export const PARAM_DEFS = [
     down: '(0)実際の見た目に近い。指の位置感覚だけで狙う練習になる。',
   },
   {
+    key: 'useObstacles', label: '障害物', unit: '',
+    min: 0, max: 1, step: 1, def: 1,
+    about: '赤いブロックの有無。上昇中だけ当たる(下から=頭をぶつけて落ちる、横から=止まる)。落下中は通り抜ける。配置は src/stage.js。',
+    up: '(1)ありだと、斜めジャンプでよける必要がある。',
+    down: '(0)なしだと、真下の連打が一番速い。基本の操作感を確かめたいときに。',
+  },
+  {
     key: 'stageHeight', label: 'ステージの高さ', unit: 'px',
     min: 1000, max: 8000, step: 500, def: 4000,
     about: 'ゴールの高さ。4000=画面約6面。',
