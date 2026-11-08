@@ -25,6 +25,7 @@ const Game = {
   totalHits: 0,
   tapTimes: [],   // 直近1秒に出した技の時刻(1秒あたりの技数の計算用)
   history: [],    // 今のコンボで出した技のid(例: ['light','light','heavy'])
+  selected: MOVE_INFO[0].id, // いま選んでいる技(画面下のボタンで切り替え。画面タップで出る技)
   lockUntil: 0,   // 硬直: この時刻まで次の技を出せない
   charging: null, // 溜め中の状態 { id, startAt, ready } / 溜めていなければ null
 
@@ -214,7 +215,7 @@ const Game = {
     ctx.textAlign = 'left';
     ctx.fillStyle = c.subText;
     ctx.font = '13px sans-serif';
-    ctx.fillText('下のボタンで攻撃(必殺は長押し)', 12, 24);
+    ctx.fillText('画面タップで攻撃 / 下のボタンで技を選ぶ', 12, 24);
 
     ctx.fillStyle = c.text;
     ctx.font = 'bold 28px sans-serif';

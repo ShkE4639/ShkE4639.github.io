@@ -3,7 +3,7 @@
 // ============================================================
 // 各ファイルをつなぐだけ。ゲームの中身(ルール・演出)はここに書かない。
 //
-//   画面サイズ合わせ → 技ボタンの準備 → 調整パネルの準備 → ループ開始
+//   画面サイズ合わせ → 調整パネルの準備 → 入力(技ボタン・画面タップ)の準備 → ループ開始
 //   ループ: 時間を進める(Game.update) → 描く(Game.draw) を毎フレーム繰り返す
 
 const canvas = document.getElementById('game');
@@ -32,8 +32,8 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-Input.init(document.getElementById('moves'));
-Tuner.init();
+Tuner.init();   // 先に調整パネルを用意(Input が技の選択時にパネルを切り替えるため)
+Input.init(document.getElementById('moves'), canvas);
 
 // ---- 毎フレームのループ ----
 let lastTime = performance.now();

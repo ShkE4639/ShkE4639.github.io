@@ -3,7 +3,7 @@
 // ============================================================
 // config.js の MOVE_PARAM_DEFS / GLOBAL_PARAM_DEFS を読んで、スライダーを自動で作る。
 // 動かすとすぐ P の値が変わり、スマホ内に保存される。
-// パネルを開いたまま、画面下の技ボタンを押して試せる。
+// パネルを開いたまま、画面をタップして試せる。技ボタンを押すと、パネルもその技のタブに切り替わる。
 //
 // 画面の構成:
 //   ① 技タブ(弱 / 中 / 強 / 必殺 / 共通)
@@ -16,7 +16,14 @@
 const Tuner = {
   tab: 'medium', // いま調整している対象(技のid または 'global')
 
+  // 技ボタンで技を選んだとき、パネルもその技のタブに切り替える
+  showMove(id) {
+    this.tab = id;
+    if (this.panel) this.build();
+  },
+
   init() {
+    this.tab = Game.selected;
     this.btn = document.getElementById('tuner-btn');
     this.panel = document.getElementById('tuner-panel');
     this.btn.addEventListener('click', () => this.panel.classList.toggle('open'));
@@ -31,7 +38,7 @@ const Tuner = {
     // 使い方
     const guide = document.createElement('div');
     guide.className = 'guide';
-    guide.textContent = '① 技のタブを選ぶ → ② 「迫力」を動かす → ③ 下のボタンで試す。' +
+    guide.textContent = '① 技のタブを選ぶ → ② 「迫力」を動かす → ③ 画面をタップして試す。' +
       'それでも足りないときだけ「細かい調整」を開く。';
     panel.appendChild(guide);
 

@@ -22,23 +22,27 @@
   }
 
   /* ---- 技ボタン(画面下) ---- */
+  /* ボタンは「技を選ぶ」だけ。帯の余白部分は画面タップ(攻撃)を邪魔しないよう、ボタン以外は素通しにする */
   #moves {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
     display: flex; gap: 8px; box-sizing: border-box;
     padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
-    touch-action: none;
+    pointer-events: none;
   }
   .move-btn {
-    flex: 1; height: 84px; border: 0; border-radius: 14px;
+    flex: 1; height: 72px; border: 3px solid transparent; border-radius: 14px;
     background: var(--c); color: #111;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     font: bold 22px sans-serif;
+    pointer-events: auto;
     touch-action: none; user-select: none; -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    box-shadow: 0 4px 0 rgba(0, 0, 0, .35);
+    opacity: .45; /* 選んでいない技は暗くする */
+    transition: opacity .08s, transform .08s;
   }
   .move-btn small { font-size: 11px; font-weight: normal; opacity: .7; margin-top: 2px; }
-  .move-btn.down { filter: brightness(1.35); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+  /* いま選んでいる技: 明るく、白い枠、少し持ち上げる */
+  .move-btn.selected { opacity: 1; border-color: #fff; transform: translateY(-6px); box-shadow: 0 6px 0 rgba(0, 0, 0, .4); }
 
   /* ---- 調整パネル(⚙ボタンで開閉。技ボタンの上に出る) ---- */
   #tuner-btn {
