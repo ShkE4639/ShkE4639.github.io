@@ -62,7 +62,9 @@ const Tuner = {
       for (const d of GLOBAL_PARAM_DEFS) panel.appendChild(this.makeRow(d, P.global, GLOBAL_DEFAULTS));
     } else {
       const info = MOVE_BY_ID[this.tab];
-      const defs = MOVE_PARAM_DEFS.filter(d => !d.onlyCharge || info.charge);
+      // 溜め関係の項目は、溜める技(長押し・後ろで溜める)のタブにだけ出す
+      const defs = MOVE_PARAM_DEFS.filter(d =>
+        (!d.onlyCharge || info.charge || info.delayed) && (!d.onlyHold || info.charge));
       let detailsBox = null;
       let lastGroup = null;
       for (const d of defs) {

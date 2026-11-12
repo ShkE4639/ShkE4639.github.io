@@ -1,11 +1,14 @@
 // ============================================================
-// input.js — 技の選択ボタンと、画面タップ(攻撃)の受け取り
+// input.js — 技のボタンと、画面タップ(攻撃)の受け取り
 // ============================================================
 // 操作のルール:
-//   ・画面下のボタン = 「どの技を使うか」を選ぶだけ(押しても攻撃は出ない)
-//   ・画面のどこかをタップ = 選んでいる技で攻撃(火花はタップした場所から出る)
-//   ・選んでいるのが溜め技(必殺)のとき = 画面を長押しして溜め、離すと撃つ
-//                                         (火花は指を離した場所から出る)
+//   ・画面下の左側のボタン(弱・中・強・必殺) = 「どの技を使うか」を選ぶだけ(押しても攻撃は出ない)
+//   ・画面のどこかをタップ = 選んでいる技で攻撃(火花などはタップした場所に出る)
+//   ・選んでいるのが長押しの技(必殺)のとき = 画面を長押しして溜め、離すと撃つ
+//   ・画面下の右側のボタン(溜撃) = 選ぶ技ではなく「押す専用」。
+//       1回押す → 後ろで溜まり始める(その間も、選んでいる技で殴れる)
+//       溜まる → ボタンが光る
+//       光っているときにもう1回押す → 発射
 //
 // 選んでいる技は Game.selected に入る。攻撃の中身は game.js の attack() を見る。
 //
@@ -17,11 +20,13 @@
 // 入力方法を増やしたくなったら(スワイプ追加など)、このファイルが編集場所。
 
 const Input = {
+  actionButtons: [], // 押す専用ボタンの一覧(溜まり具合の表示更新に使う)
+
   // container: 技ボタンを並べる場所 / canvas: 攻撃のタップを受ける画面
   // toWorld(clientX, clientY): 画面上の位置 → ゲーム内座標 {x, y} に変換する関数
   init(container, canvas, toWorld) {
     const buttons = {};
-    let chargePointer = null; // 溜め技を押している指のid(別の指の離しで暴発しないように)
+    let chargePointer = null; // 長押しで溜めている指のid(別の指の離しで暴発しないように)
 
     // ---- 技の選択 ----
     function select(id) {
@@ -31,7 +36,9 @@ const Input = {
       Tuner.showMove(id); // 調整パネルも、その技のタブに切り替える
     }
 
+    // 選ぶボタンを並べる
     MOVE_INFO.forEach((info, index) => {
+      if (info.delayed) return;
       const btn = document.createElement('button');
       btn.className = 'move-btn';
       btn.style.setProperty('--c', info.color);
@@ -46,9 +53,35 @@ const Input = {
       container.appendChild(btn);
     });
 
+    // 押す専用ボタンを、少し間を空けて右側に並べる
+    const delayedList = MOVE_INFO.filter(i => i.delayed);
+    if (delayedList.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'sep';
+      container.appendChild(sep);
+    }
+    for (const info of delayedList) {
+      const btn = document.createElement('button');
+      btn.className = 'act-btn';
+      btn.style.setProperty('--c', info.color);
+      btn.style.setProperty('--p', 0);
+      const small = document.createElement('small');
+      const label = document.createElement('span');
+      label.textContent = info.name;
+      btn.append(label, small);
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        GameAudio.unlock();
+        Game.pressDelayed(info.id);
+      });
+      btn.addEventListener('contextmenu', (e) => e.preventDefault());
+      this.actionButtons.push({ id: info.id, btn, small, text: '' });
+      container.appendChild(btn);
+    }
+
     // ---- 攻撃(画面のタップ) ----
-    // 今選んでいる技を出す。溜め技なら溜め始める。pos: タップした位置(ゲーム内座標)。
-    // pos が null のとき(キーボード操作)は、火花は敵の位置から出る
+    // 今選んでいる技を出す。長押しの技なら溜め始める。pos: タップした位置(ゲーム内座標)。
+    // pos が null のとき(キーボード操作)は、火花などは敵の位置に出る
     function press(pointerId, pos) {
       GameAudio.unlock(); // 音を出せる状態にする(最初のタップで必要)
       const info = MOVE_BY_ID[Game.selected];
@@ -75,12 +108,17 @@ const Input = {
     canvas.addEventListener('pointercancel', (e) => release(e.pointerId, toWorld(e.clientX, e.clientY)));
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // ---- キーボード(PCで試す用): 1〜4 で技を選ぶ / スペースで攻撃 ----
-    const keyToMove = {};
-    MOVE_INFO.forEach((info, i) => { keyToMove[String(i + 1)] = info.id; });
+    // ---- キーボード(PCで試す用): 数字キーで技を選ぶ(溜撃は押す) / スペースで攻撃 ----
+    const keyToInfo = {};
+    MOVE_INFO.forEach((info, i) => { keyToInfo[String(i + 1)] = info; });
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return; // 押しっぱなしの自動連打は無視
-      if (keyToMove[e.key]) { select(keyToMove[e.key]); return; }
+      const info = keyToInfo[e.key];
+      if (info) {
+        if (info.delayed) Game.pressDelayed(info.id);
+        else select(info.id);
+        return;
+      }
       if (e.key === ' ') { e.preventDefault(); press('key', null); }
     });
     window.addEventListener('keyup', (e) => {
@@ -88,5 +126,16 @@ const Input = {
     });
 
     select(Game.selected); // 最初の選択を画面に反映
+  },
+
+  // 毎フレーム呼ばれる: 押す専用ボタンの「溜まり具合」と「光る」を更新する
+  refresh() {
+    for (const a of this.actionButtons) {
+      const state = Game.delayedState(a.id);
+      a.btn.style.setProperty('--p', state === 'idle' ? 0 : Game.delayedLevel(a.id).toFixed(3));
+      a.btn.classList.toggle('ready', state === 'ready');
+      const text = state === 'idle' ? '押して溜める' : (state === 'charging' ? '溜め中…' : '押して発射!');
+      if (a.text !== text) { a.small.textContent = text; a.text = text; }
+    }
   },
 };

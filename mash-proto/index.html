@@ -44,6 +44,27 @@
   /* いま選んでいる技: 明るく、白い枠、少し持ち上げる */
   .move-btn.selected { opacity: 1; border-color: #fff; transform: translateY(-6px); box-shadow: 0 6px 0 rgba(0, 0, 0, .4); }
 
+  /* 押す専用ボタン(溜撃)。選ぶボタンとは見た目を変える: 枠だけ色付きで、溜まるほど下から色が満ちる */
+  #moves .sep { flex: none; width: 2px; margin: 6px 0; border-radius: 1px; background: rgba(255, 255, 255, .25); }
+  .act-btn {
+    flex: 1.25; height: 72px; border: 3px solid var(--c); border-radius: 14px;
+    padding: 0; white-space: nowrap; /* ボタン内の文字を折り返さない */
+    background: linear-gradient(to top, var(--c) calc(var(--p, 0) * 100%), rgba(255, 255, 255, .1) calc(var(--p, 0) * 100%));
+    color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .7);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font: bold 20px sans-serif;
+    pointer-events: auto;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .act-btn small { font-size: 11px; font-weight: normal; margin-top: 2px; }
+  /* 満タン: 全体が光って脈打つ。「押せ!」の合図 */
+  .act-btn.ready { background: var(--c); color: #111; text-shadow: none; animation: act-pulse .45s ease-in-out infinite alternate; }
+  @keyframes act-pulse {
+    from { transform: translateY(-4px) scale(1);    box-shadow: 0 0 6px var(--c); }
+    to   { transform: translateY(-8px) scale(1.06); box-shadow: 0 0 22px 4px var(--c); }
+  }
+
   /* ---- 調整パネル(⚙ボタンで開閉。技ボタンの上に出る) ---- */
   #tuner-btn {
     position: fixed; top: 8px; right: 8px; z-index: 10;

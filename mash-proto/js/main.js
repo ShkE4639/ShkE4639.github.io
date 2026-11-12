@@ -50,6 +50,7 @@ function loop(now) {
   lastTime = now;
 
   Game.update(dt);
+  Input.refresh(); // 溜撃ボタンの溜まり具合・光り方を更新
 
   ctx.setTransform(view.drawScale, 0, 0, view.drawScale, 0, 0);
   Game.draw(ctx);

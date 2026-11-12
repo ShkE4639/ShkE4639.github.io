@@ -110,14 +110,14 @@ const GameAudio = (() => {
     chargeGain = null;
   }
 
-  // 満タンになった合図(ピッ)
-  function playReady() {
+  // 短い「ピッ」(freq: 音の高さ)。満タンの合図は高め(880)、溜め開始は低め(440)
+  function playBlip(freq) {
     if (!ctx) return;
     const t = ctx.currentTime;
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.setValueAtTime(freq, t);
     g.gain.setValueAtTime(0.25, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
     osc.connect(g).connect(ctx.destination);
@@ -125,5 +125,7 @@ const GameAudio = (() => {
     osc.stop(t + 0.13);
   }
 
-  return { unlock, playHit, startCharge, setCharge, stopCharge, playReady };
+  const playReady = () => playBlip(880); // 満タンになった合図
+  const playStart = () => playBlip(440); // 溜め開始の合図
+  return { unlock, playHit, startCharge, setCharge, stopCharge, playReady, playStart };
 })();
