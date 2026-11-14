@@ -149,8 +149,9 @@ const FIXED = {
   sfxLifeSec: 0.5,        // 擬音の文字が消えるまでの秒数
   historyMax: 10,         // 画面に表示する「出した技の履歴」の最大数
   colors: {
-    bg: '#1b1f2a', ground: '#2a3042',
-    enemy: '#e5534b', enemyFlash: '#ffffff', player: '#4da3ff', arm: '#3b82d6',
+    bg: '#1b1f2a',
+    enemy: '#e5534b', enemyBody: '#b8423c', enemyFlash: '#ffffff', // 敵の肌(頭・拳) / 服 / 当たった瞬間の白
+    arm: '#3b82d6',                                                  // 自分の腕(画面の下から伸びる)
     text: '#ffffff', subText: '#9aa4bf',
   },
 };

@@ -1,7 +1,11 @@
 // ============================================================
-// game.js — ゲーム本体: 敵とプレイヤーの状態、技の処理、描画
+// game.js — ゲーム本体: 敵の状態、技の処理、描画
 // ============================================================
-// 今のステップ2は「ひるんで動かない敵を、いろいろな技で好きに殴る」。
+// 視点は「自分の目で、画面越しに敵を見ている」イメージ(ドラクエのような一人称)。
+//   ・敵は正面に、構えた上半身だけが映っている
+//   ・自分の体は映らない。殴るときだけ、画面の下の左右の縁から腕と拳が伸びる
+//
+// 今のステップは「ひるんで動かない敵を、いろいろな技で好きに殴る」。
 // 後のステップで、ここに「敵の攻撃・カウンター・ひるみ状態・フィニッシュ」を足していく。
 //
 // 読み方:
@@ -18,9 +22,10 @@ const Game = {
   W: FIXED.worldWidth,
   H: 640, // 画面の縦横比から main.js が毎回計算して上書きする
 
-  // tilt: 殴られて傾く角度 / squash: 殴られて潰れる量(どちらも時間で元に戻る)
-  enemy:  { x: 0, y: 0, w: 90, h: 130, offsetX: 0, flashLeft: 0, tilt: 0, squash: 0 },
-  player: { x: 0, y: 0, r: 32, offsetX: 0 },
+  // 敵。x,y は頭の中心。
+  //   offsetX: 殴られて横へずれる量 / tilt: 傾く角度 / squash: 潰れる量 / back: 後ろへ下がる量(奥へ小さくなる)
+  //   (どれも殴られた瞬間に値が入り、時間で元に戻る)
+  enemy: { x: 0, y: 0, offsetX: 0, flashLeft: 0, tilt: 0, squash: 0, back: 0 },
 
   combo: 0,
   lastHitAt: 0,
@@ -31,21 +36,17 @@ const Game = {
   lockUntil: 0,   // 硬直: この時刻まで次の技を出せない
   charging: null, // 長押しで溜め中の状態 { id, startAt, ready } / 溜めていなければ null
   delayed: {},    // 後ろで溜め中の技 { id: { startAt, ready } }
-  punchSide: 1,   // 拳を出す肩の上下(1か-1。攻撃のたびに入れ替えて、左右交互のジャブに見せる)
+  punchSide: 1,   // 画面の中央付近を殴るとき、どちらの腕を使うか(1か-1。攻撃のたびに入れ替える)
 
   // 画面サイズが決まったとき・変わったときに位置を決め直す
   layout() {
-    // 画面下に技ボタンと調整パネルが来るので、敵は少し上寄りに置く
-    const midY = this.H * 0.36;
-    this.enemy.x = this.W * 0.68;
-    this.enemy.y = midY;
-    this.player.x = this.W * 0.25;
-    this.player.y = midY + 30;
+    this.enemy.x = this.W / 2;
+    this.enemy.y = this.H * 0.30; // 画面の下には技ボタンと調整パネルが来るので、頭は上寄りに置く
   },
 
   // ★ 技が出た瞬間の処理(手触りの中心)
   // id: 技のid / level: 溜め技の溜まり具合(0〜1)。溜め技以外は使わない
-  // pos: タップした位置 {x, y}。火花・拳・衝撃・擬音・数字はここに出る。null なら敵の位置に出る
+  // pos: タップした位置 {x, y}。拳・衝撃・擬音・火花・数字はここに出る。null なら敵の胸のあたりに出る
   attack(id, level = 1, pos = null) {
     const now = performance.now();
     if (now < this.lockUntil) return false; // 硬直中は出せない
@@ -69,10 +70,10 @@ const Game = {
     // 見た目(拳・衝撃・擬音・傾き)の大きさ。「迫力」を上げすぎても、見た目だけは上限を設ける
     const vis = Math.min(scale, 1.6);
 
-    // 当たった位置: タップした場所。位置がないとき(キーボード操作・溜撃)は敵の左端あたり
+    // 当たった位置: タップした場所。位置がないとき(キーボード操作・溜撃)は敵の胸のあたり
     const e = this.enemy;
-    const hx = pos ? pos.x : e.x + e.offsetX - e.w / 2;
-    const hy = pos ? pos.y : e.y + (Math.random() * 60 - 30);
+    const hx = pos ? pos.x : e.x + (Math.random() * 60 - 30);
+    const hy = pos ? pos.y : e.y + 60 + (Math.random() * 40 - 20);
 
     // --- 手触りの演出(それぞれの強さは config.js / ⚙パネルで調整) ---
     Effects.shake(m.shakePower * scale, m.shakeDecay);                                    // 画面揺れ
@@ -81,19 +82,24 @@ const Game = {
     Effects.spawnPopup(hx, hy - 14, String(Math.max(1, Math.round(info.damage * charge))),
       info.popupSize * (info.charge ? 0.8 + 0.4 * level : 1), info.color);                // ダメージ数字
     e.flashLeft = m.flashMs;                                                              // 敵が白く光る
-    e.offsetX = m.knockback * scale;                                                      // 敵がのけぞる
-    // 敵が殴られた高さに応じて傾き、少し潰れる(上を殴れば上が奥へ、下を殴れば下が奥へ)。
+
+    // 敵の反応: 殴られた側と反対へずれて傾き、少し潰れ、後ろへ下がる(奥へ小さくなる)。
     // 大きさは「のけぞり」の大きい技ほど大きい(弱はほとんど動かず、強は大きく動く)
     const kick = Math.min(1.6, scale * m.knockback / 30);
-    e.tilt = Math.max(-1, Math.min(1, (e.y - hy) / 60)) * 0.16 * kick;
+    const dir = Math.max(-1, Math.min(1, (e.x - hx) / 80)); // 画面の左を殴れば右へ(+)、右を殴れば左へ(-)
+    e.offsetX = dir * m.knockback * scale * 0.6;
+    e.tilt = dir * 0.16 * kick;
     e.squash = 0.10 * kick;
+    e.back = Math.min(0.1, 0.002 * m.knockback * scale);
 
     // --- 見た目の演出 ---
-    // 拳: 体の中心から当たった位置まで(腕の付け根は体の後ろに隠れる)。上下に少しずらして、左右交互のジャブに見せる
+    // 拳: 画面の下の左右の縁から、当たった位置まで。タップした側に近い腕を使う(中央あたりは左右交互)
     if (m.fistSize > 0) {
-      const pl = this.player;
-      this.punchSide = -this.punchSide;
-      Effects.spawnFist(pl.x + pl.offsetX, pl.y - 4 + this.punchSide * 9, hx, hy, m.fistSize * vis, info.color);
+      let side;
+      if (hx < this.W * 0.4) side = -1;
+      else if (hx > this.W * 0.6) side = 1;
+      else { this.punchSide = -this.punchSide; side = this.punchSide; }
+      Effects.spawnFist(this.W / 2 + side * this.W * 0.36, this.H + 10, hx, hy, m.fistSize * vis, info.color);
     }
     // 衝撃: 当たった場所に広がる輪と放射線
     if (m.impactSize > 0) Effects.spawnImpact(hx, hy, m.impactSize * vis, info.color);
@@ -104,7 +110,6 @@ const Game = {
     // ズームパンチ
     if (m.zoomPunch > 0) Effects.zoomKick(m.zoomPunch * vis);
 
-    this.player.offsetX = m.knockback * scale;                                            // 自分が踏み込む
     GameAudio.playHit(this.combo, m, charge);                                             // 効果音
     if (m.vibrateMs > 0 && navigator.vibrate) navigator.vibrate(Math.max(1, Math.round(m.vibrateMs * scale))); // 振動
     // 満タンで撃った溜め技は、画面がピカッと光る
@@ -130,7 +135,7 @@ const Game = {
     return Math.min(1, (performance.now() - this.charging.startAt) / m.chargeMaxMs);
   },
   // 指を離した → 溜めた分の威力で技を出す
-  // pos: 指を離した位置(火花などの出る場所)
+  // pos: 指を離した位置(拳などの出る場所)
   releaseCharge(pos = null) {
     if (!this.charging) return;
     const level = this.chargeLevel();
@@ -172,15 +177,16 @@ const Game = {
     // Effects.update が「ゲーム内で進める時間」を返す(ヒットストップ中は0)
     const worldDt = Effects.update(realDt);
 
-    // のけぞり・踏み込み・傾き・潰れが元に戻る
+    // のけぞり・傾き・潰れ・後退が元に戻る
     const k = Math.pow(FIXED.recoverRate, worldDt * 60);
-    this.enemy.offsetX *= k;
-    this.enemy.tilt *= k;
-    this.enemy.squash *= k;
-    this.player.offsetX *= k;
+    const e = this.enemy;
+    e.offsetX *= k;
+    e.tilt *= k;
+    e.squash *= k;
+    e.back *= k;
 
     // 白点滅の残り時間
-    this.enemy.flashLeft = Math.max(0, this.enemy.flashLeft - worldDt * 1000);
+    e.flashLeft = Math.max(0, e.flashLeft - worldDt * 1000);
 
     // コンボ切れ(画面表示のため、技を出していなくても判定する)
     const now = performance.now();
@@ -215,9 +221,8 @@ const Game = {
   },
 
   draw(ctx) {
-    const c = FIXED.colors;
     const shake = Effects.shakeOffset();
-    const e = this.enemy;
+    const W = this.W, H = this.H;
 
     // ---- 画面揺れ・ズームの対象になる部分 ----
     ctx.save();
@@ -225,61 +230,145 @@ const Game = {
     if (Effects.zoomAmt > 0) {
       // 場面の中央を中心に、少し拡大する(ズームパンチ)
       const z = 1 + Effects.zoomAmt;
-      ctx.translate(this.W / 2, e.y);
+      ctx.translate(W / 2, this.enemy.y);
       ctx.scale(z, z);
-      ctx.translate(-this.W / 2, -e.y);
+      ctx.translate(-W / 2, -this.enemy.y);
     }
 
-    // 背景(揺れで端が見えないよう、少し大きめに塗る)
-    ctx.fillStyle = c.bg;
-    ctx.fillRect(-60, -60, this.W + 120, this.H + 120);
-    ctx.fillStyle = c.ground;
-    ctx.fillRect(-60, e.y + e.h / 2, this.W + 120, this.H);
+    // 背景(揺れで端が見えないよう、少し大きめに塗る)。周りを暗くして奥行きを出す
+    ctx.fillStyle = FIXED.colors.bg;
+    ctx.fillRect(-60, -60, W + 120, H + 120);
+    const g = ctx.createRadialGradient(W / 2, H * 0.4, 40, W / 2, H * 0.4, Math.max(W, H) * 0.8);
+    g.addColorStop(0, 'rgba(255,255,255,0.05)');
+    g.addColorStop(1, 'rgba(0,0,0,0.4)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-60, -60, W + 120, H + 120);
 
-    // 敵(四角)。足元を支点に、傾いて潰れる
-    ctx.save();
-    ctx.translate(e.x + e.offsetX, e.y + e.h / 2);
-    ctx.rotate(e.tilt);
-    ctx.scale(1 - e.squash, 1 + e.squash * 0.6);
-    ctx.fillStyle = e.flashLeft > 0 ? c.enemyFlash : c.enemy;
-    ctx.fillRect(-e.w / 2, -e.h, e.w, e.h);
-    ctx.restore();
-
-    // 衝撃の輪と拳(敵の上に重ね、プレイヤーより後ろ)
-    Effects.drawBack(ctx);
-
-    // プレイヤー(丸)。溜め中は大きくなり、震え、輪が出る
-    this.drawPlayer(ctx);
-
-    // 火花・数字・擬音(一番手前)
-    Effects.draw(ctx);
+    this.drawEnemy(ctx);   // 敵(構えた上半身)
+    Effects.drawBack(ctx); // 衝撃の輪と、画面の下から伸びる腕と拳(敵の上に重ねる)
+    Effects.draw(ctx);     // 火花・数字・擬音(一番手前)
 
     ctx.restore();
 
     // ---- 揺らさないもの ----
-    Effects.drawOverlay(ctx, this.W, this.H);
+    Effects.drawOverlay(ctx, W, H);
+    this.drawCharge(ctx);
     this.drawHud(ctx);
   },
 
-  drawPlayer(ctx) {
-    const p = this.player;
-    const lv = this.chargeLevel();
-    const full = this.charging && this.charging.ready;
-    const jitter = lv > 0 ? (Math.random() * 2 - 1) * lv * 3 : 0;
-    const x = p.x + p.offsetX + jitter;
-    const y = p.y + (lv > 0 ? (Math.random() * 2 - 1) * lv * 3 : 0);
-    const r = p.r * (1 + lv * 0.35);
-    const hold = MOVE_INFO.find(i => i.charge);
+  // 敵(いまは仮の絵。頭・胴・構えた腕を、丸と四角でそれぞれ描いている)
+  // 殴られると、奥へ下がり(back)、足元を支点に傾いて潰れる(tilt, squash)
+  drawEnemy(ctx) {
+    const c = FIXED.colors;
+    const e = this.enemy;
+    const t = performance.now() / 1000;
+    const cx = e.x + e.offsetX + Math.sin(t * 1.1) * 3; // 構えながら、ゆらゆら揺れる
+    const cy = e.y + Math.sin(t * 2.2) * 2;             // 呼吸で上下する
+    const flash = e.flashLeft > 0;
+    const skin = flash ? c.enemyFlash : c.enemy;
+    const cloth = flash ? c.enemyFlash : c.enemyBody;
 
-    ctx.fillStyle = full ? '#ffffff' : FIXED.colors.player;
+    ctx.save();
+    // 後ろへ下がる: 画面の中ほどを中心に縮む(奥行き)
+    ctx.translate(this.W / 2, this.H * 0.5);
+    ctx.scale(1 - e.back, 1 - e.back);
+    ctx.translate(-this.W / 2, -this.H * 0.5);
+    // 傾き・潰れ: 画面の下の縁(体の根元)を支点にする
+    ctx.translate(cx, this.H);
+    ctx.rotate(e.tilt);
+    ctx.scale(1 - e.squash, 1 + e.squash * 0.6);
+    ctx.translate(-cx, -this.H);
+
+    // 胴体(肩から画面の下まで)
+    ctx.fillStyle = cloth;
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.moveTo(cx - 105, cy + 76);
+    ctx.quadraticCurveTo(cx - 108, cy + 56, cx - 70, cy + 52);
+    ctx.lineTo(cx + 70, cy + 52);
+    ctx.quadraticCurveTo(cx + 108, cy + 56, cx + 105, cy + 76);
+    ctx.lineTo(cx + 88, this.H + 80);
+    ctx.lineTo(cx - 88, this.H + 80);
+    ctx.closePath();
     ctx.fill();
 
+    // 首と頭
+    ctx.fillStyle = skin;
+    ctx.fillRect(cx - 15, cy + 28, 30, 30);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 顔(睨んだ目と眉)。白く光っている間は描かない
+    if (!flash) {
+      ctx.strokeStyle = '#1b1f2a';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - 26, cy - 14); ctx.lineTo(cx - 8, cy - 8);
+      ctx.moveTo(cx + 26, cy - 14); ctx.lineTo(cx + 8, cy - 8);
+      ctx.stroke();
+      ctx.fillStyle = '#1b1f2a';
+      ctx.beginPath();
+      ctx.arc(cx - 15, cy + 2, 3.5, 0, Math.PI * 2);
+      ctx.arc(cx + 15, cy + 2, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 構えた腕: 肩から、あごの前の拳へ
+    for (const side of [-1, 1]) {
+      const fx = cx + side * 44;
+      const fy = cy + 52 + Math.sin(t * 3.3 + side) * 2;
+      ctx.strokeStyle = cloth;
+      ctx.lineWidth = 30;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 92, cy + 84);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      ctx.fillStyle = skin;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 24, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+
+  // 溜めの表現(自分の体は映らないので、画面そのもので見せる)
+  //   長押しの溜め(必殺): 画面の下に拳が現れて大きくなる。満タンで白く脈打つ
+  //   後ろで溜める技(溜撃): 画面の縁が色づいていく。満タンで脈打つ
+  drawCharge(ctx) {
+    const W = this.W, H = this.H;
+
+    // 溜撃: 画面の縁の光
+    for (const id in this.delayed) {
+      const info = MOVE_BY_ID[id];
+      const lv = this.delayedLevel(id);
+      const ready = this.delayed[id].ready;
+      const a = (0.10 + 0.40 * lv) * (ready ? 0.75 + 0.25 * Math.sin(performance.now() / 70) : 1);
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.65);
+      g.addColorStop(0, info.color + '00'); // 中心は透明
+      g.addColorStop(1, info.color);        // 縁は技の色
+      ctx.globalAlpha = a;
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+
+    // 必殺: 画面の下の拳
+    const lv = this.chargeLevel();
+    const hold = MOVE_INFO.find(i => i.charge);
     if (lv > 0 && hold) {
-      // 長押しの溜めの輪(溜まるほど濃く、満タンでは脈打つ)
+      const full = this.charging && this.charging.ready;
+      const x = W / 2 + (Math.random() * 2 - 1) * lv * 3; // 溜まるほど震える
+      const y = H * 0.8 + (Math.random() * 2 - 1) * lv * 3;
+      const r = 26 * (1 + lv * 0.6);
       const pulse = full ? Math.sin(performance.now() / 60) * 3 : 0;
-      ctx.globalAlpha = 0.3 + 0.7 * lv;
+
+      ctx.globalAlpha = 0.35 + 0.65 * lv;
+      ctx.fillStyle = full ? '#ffffff' : hold.color;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
       ctx.strokeStyle = hold.color;
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -287,27 +376,12 @@ const Game = {
       ctx.stroke();
       ctx.globalAlpha = 1;
 
-      // 溜めゲージ(プレイヤーの下)
-      const gw = 80, gh = 8, gx = p.x - gw / 2, gy = p.y + p.r * 1.4 + 14;
+      // 溜めゲージ
+      const gw = 100, gh = 8, gx = W / 2 - gw / 2, gy = y + r + 20;
       ctx.fillStyle = 'rgba(255,255,255,0.2)';
       ctx.fillRect(gx, gy, gw, gh);
       ctx.fillStyle = full ? '#ffffff' : hold.color;
       ctx.fillRect(gx, gy, gw * lv, gh);
-    }
-
-    // 後ろで溜め中の技(溜撃)の輪: 溜まるほど外へ広がって濃くなり、満タンで脈打つ
-    for (const id in this.delayed) {
-      const info = MOVE_BY_ID[id];
-      const dlv = this.delayedLevel(id);
-      const ready = this.delayed[id].ready;
-      const pulse = ready ? Math.sin(performance.now() / 70) * 4 : 0;
-      ctx.globalAlpha = 0.3 + 0.7 * dlv;
-      ctx.strokeStyle = info.color;
-      ctx.lineWidth = ready ? 6 : 4;
-      ctx.beginPath();
-      ctx.arc(x, y, r + 16 + dlv * 10 + pulse, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
     }
   },
 

@@ -10,7 +10,7 @@
 //   ズームパンチ    当たった瞬間に画面がわずかに拡大して戻る
 //   画面フラッシュ  画面が一瞬白くなる。溜め技を満タンで撃ったときだけ
 //   火花           当たった場所から飛び散る筋
-//   拳            自分から当たった場所まで伸びる拳と腕(当たった瞬間の姿で一瞬止まり、戻る)
+//   拳            画面の下の縁から、当たった場所まで伸びる腕と拳(当たった瞬間の姿で一瞬止まり、戻る)
 //   衝撃           当たった場所に広がる輪と放射線
 //   擬音           「ドスッ」などの文字
 //   数字           ダメージ数字(上へ浮かぶ)
@@ -64,7 +64,7 @@ const Effects = {
   spawnPopup(x, y, text, size, color) {
     this.popups.push({ x: x + (Math.random() * 30 - 15), y, text, size, color, age: 0 });
   },
-  // 拳: (sx,sy)=肩の位置 から (tx,ty)=当たった位置 まで。r=拳の半径
+  // 拳: (sx,sy)=腕の根元(画面の下の縁) から (tx,ty)=当たった位置 まで。r=拳の半径
   spawnFist(sx, sy, tx, ty, r, color) {
     this.fists.push({ sx, sy, tx, ty, r, color, age: 0 });
   },
@@ -186,13 +186,19 @@ const Effects = {
       const fy = f.ty + (f.sy - f.ty) * back;
       ctx.globalAlpha = t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35;
 
-      // 腕
-      ctx.strokeStyle = FIXED.colors.arm;
-      ctx.lineWidth = Math.max(4, f.r * 0.9);
+      // 腕: 根元(画面の下の縁)が太く、拳に向かって細くなる(手前から奥へ伸びる奥行きが出る)
+      const dx = fx - f.sx, dy = fy - f.sy;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;       // 腕に直角な向き
+      const w0 = f.r * 1.3, w1 = f.r * 0.55;     // 根元と先の、太さの半分
+      ctx.fillStyle = FIXED.colors.arm;
       ctx.beginPath();
-      ctx.moveTo(f.sx, f.sy);
-      ctx.lineTo(fx, fy);
-      ctx.stroke();
+      ctx.moveTo(f.sx + nx * w0, f.sy + ny * w0);
+      ctx.lineTo(fx + nx * w1, fy + ny * w1);
+      ctx.lineTo(fx - nx * w1, fy - ny * w1);
+      ctx.lineTo(f.sx - nx * w0, f.sy - ny * w0);
+      ctx.closePath();
+      ctx.fill();
 
       // 拳(技の色 + 白い縁)
       ctx.fillStyle = f.color;
