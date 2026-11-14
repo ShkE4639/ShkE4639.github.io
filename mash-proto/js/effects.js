@@ -14,6 +14,9 @@
 //   衝撃           当たった場所に広がる輪と放射線
 //   擬音           「ドスッ」などの文字
 //   数字           ダメージ数字(上へ浮かぶ)
+//   エネルギー玉    必殺。画面の下から当たる場所へ飛び、着いたら爆発する
+//   軌跡           キック。スワイプした軌跡に沿った白い筋
+//   爆発           玉や溜撃が当たったときの、丸く広がる光
 //
 // ※ ヒットストップ中は、火花・拳・衝撃・擬音の動きも止まる(当たった瞬間の絵が残る)。
 //    画面揺れとズームは止まらない。
@@ -29,6 +32,9 @@ const Effects = {
   fists: [],          // 拳
   impacts: [],        // 衝撃の輪
   sfxs: [],           // 擬音の文字
+  orbs: [],           // 飛んでいくエネルギー玉
+  slashes: [],        // キックの軌跡
+  blasts: [],         // 爆発
 
   // ---- game.js から呼ばれる「頼み事」 ----
   shake(power, decay) {
@@ -65,8 +71,21 @@ const Effects = {
     this.popups.push({ x: x + (Math.random() * 30 - 15), y, text, size, color, age: 0 });
   },
   // 拳: (sx,sy)=腕の根元(画面の下の縁) から (tx,ty)=当たった位置 まで。r=拳の半径
-  spawnFist(sx, sy, tx, ty, r, color) {
-    this.fists.push({ sx, sy, tx, ty, r, color, age: 0 });
+  // thick: 腕(足)の根元の太さの倍率(キックは太くする)
+  spawnFist(sx, sy, tx, ty, r, color, thick = 1.3) {
+    this.fists.push({ sx, sy, tx, ty, r, color, thick, age: 0 });
+  },
+  // エネルギー玉: (sx,sy) から (tx,ty) へ飛ぶ。着いたら onArrive() が呼ばれる(当たった処理はそこで行う)
+  spawnOrb(sx, sy, tx, ty, r, color, onArrive) {
+    this.orbs.push({ sx, sy, tx, ty, r, color, onArrive, age: 0, done: false });
+  },
+  // キックの軌跡: (x0,y0) から (x1,y1) へ、細い所から太い所へ伸びる筋
+  spawnSlash(x0, y0, x1, y1, w, color) {
+    this.slashes.push({ x0, y0, x1, y1, w, color, age: 0 });
+  },
+  // 爆発: 丸く広がる光。r=最大の半径
+  spawnBlast(x, y, r, color) {
+    this.blasts.push({ x, y, r, color, age: 0 });
   },
   // 衝撃: 当たった場所に広がる輪と放射線。size=大きさ(px)
   spawnImpact(x, y, size, color) {
@@ -116,6 +135,19 @@ const Effects = {
     this.impacts = this.impacts.filter(i => i.age < FIXED.impactLifeSec);
     for (const s of this.sfxs) s.age += worldDt;
     this.sfxs = this.sfxs.filter(s => s.age < FIXED.sfxLifeSec);
+    for (const s of this.slashes) s.age += worldDt;
+    this.slashes = this.slashes.filter(s => s.age < FIXED.slashLifeSec);
+    for (const b of this.blasts) b.age += worldDt;
+    this.blasts = this.blasts.filter(b => b.age < FIXED.blastLifeSec);
+
+    // 玉: 着いたら1回だけ「当たった処理」を呼ぶ(新しい演出が増えるので、配列を回し終えてから)
+    const arrived = [];
+    for (const o of this.orbs) {
+      o.age += worldDt;
+      if (!o.done && o.age >= FIXED.orbFlySec) { o.done = true; arrived.push(o); }
+    }
+    this.orbs = this.orbs.filter(o => !o.done);
+    for (const o of arrived) o.onArrive();
 
     return worldDt;
   },
@@ -131,13 +163,16 @@ const Effects = {
 
   // 敵の上・プレイヤーの後ろに描くもの(衝撃の輪、拳と腕)。腕の付け根は体の後ろに隠れる
   drawBack(ctx) {
+    this.drawBlasts(ctx);
     this.drawImpacts(ctx);
+    this.drawSlashes(ctx);
     this.drawFists(ctx);
     ctx.globalAlpha = 1;
   },
 
   // 一番手前に描くもの(火花・数字・擬音)
   draw(ctx) {
+    this.drawOrbs(ctx);
     this.drawParticles(ctx);
     this.drawPopups(ctx);
     this.drawSfx(ctx);
@@ -190,7 +225,7 @@ const Effects = {
       const dx = fx - f.sx, dy = fy - f.sy;
       const len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len, ny = dx / len;       // 腕に直角な向き
-      const w0 = f.r * 1.3, w1 = f.r * 0.55;     // 根元と先の、太さの半分
+      const w0 = f.r * f.thick, w1 = f.r * 0.55;     // 根元と先の、太さの半分
       ctx.fillStyle = FIXED.colors.arm;
       ctx.beginPath();
       ctx.moveTo(f.sx + nx * w0, f.sy + ny * w0);
@@ -210,6 +245,77 @@ const Effects = {
       ctx.stroke();
     }
     ctx.restore();
+  },
+
+  // 爆発: 白い芯から技の色へ、丸く広がって消える
+  drawBlasts(ctx) {
+    ctx.save();
+    for (const b of this.blasts) {
+      const t = b.age / FIXED.blastLifeSec;
+      const ease = 1 - Math.pow(1 - t, 3);
+      const r = b.r * (0.3 + 0.9 * ease);
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.35, b.color);
+      g.addColorStop(1, b.color + '00');
+      ctx.globalAlpha = 1 - t * t;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+
+  // キックの軌跡: 始点で細く、終点で太い筋
+  drawSlashes(ctx) {
+    ctx.save();
+    for (const s of this.slashes) {
+      const t = s.age / FIXED.slashLifeSec;
+      const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(s.x0, s.y0);
+      ctx.lineTo(s.x1 + nx * s.w, s.y1 + ny * s.w);
+      ctx.lineTo(s.x1 - nx * s.w, s.y1 - ny * s.w);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  // 飛んでいくエネルギー玉: 加速しながら奥へ進み、少し小さくなる
+  drawOrbs(ctx) {
+    ctx.save();
+    for (const o of this.orbs) {
+      const t = Math.min(1, o.age / FIXED.orbFlySec);
+      const e = t * t;
+      const x = o.sx + (o.tx - o.sx) * e;
+      const y = o.sy + (o.ty - o.sy) * e;
+      Effects.drawEnergyBall(ctx, x, y, o.r * (1 - 0.35 * t), o.color, 1);
+    }
+    ctx.restore();
+  },
+
+  // エネルギーの玉(溜め中も飛ぶときも、同じ絵を使う): 白い芯・技の色・ぼんやりした光
+  drawEnergyBall(ctx, x, y, r, color, alpha) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.6);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.5, color);
+    g.addColorStop(1, color + '00');
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   },
 
   // 火花: 飛んでいく向きに伸びる筋(だんだん薄くなる)

@@ -6,7 +6,7 @@
 // パネルを開いたまま、画面をタップして試せる。技ボタンを押すと、パネルもその技のタブに切り替わる。
 //
 // 画面の構成:
-//   ① 技タブ(弱 / 中 / 強 / 必殺 / 共通)
+//   ① 技タブ(中 / 強 / キック / 必殺 / 溜撃 / 共通)
 //   ② 「迫力」スライダー(まとめて強弱) ← まずはこれだけ動かす
 //   ③ 「細かい調整」(折りたたみ)
 //   ④ 初期値に戻す / 設定の書き出し
@@ -64,7 +64,7 @@ const Tuner = {
       const info = MOVE_BY_ID[this.tab];
       // 溜め関係の項目は、溜める技(長押し・後ろで溜める)のタブにだけ出す
       const defs = MOVE_PARAM_DEFS.filter(d =>
-        (!d.onlyCharge || info.charge || info.delayed) && (!d.onlyHold || info.charge));
+        (!d.onlyCharge || info.charge || info.delayed) && (!d.onlyHold || info.charge) && (!d.onlyOrb || info.orb));
       let detailsBox = null;
       let lastGroup = null;
       for (const d of defs) {

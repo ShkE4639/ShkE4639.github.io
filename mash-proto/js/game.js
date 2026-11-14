@@ -11,7 +11,7 @@
 // 読み方:
 //   attack()  … 技が出た瞬間に1回呼ばれる。「何が起きるか」はここに全部書いてある ★
 //   startCharge / releaseCharge … 長押しで溜める技(必殺)
-//   pressDelayed … 後ろで溜まる技(溜撃)。1回目で溜め開始、光ったらもう1回で発射
+//   pressDelayed / fireAimed … 後ろで溜まる技(溜撃)。1回目で溜め開始 → 光ったらもう1回押す → 撃つ場所をタップ
 //   update()  … 毎フレーム呼ばれる。時間で変化するもの(のけぞりが戻る、溜まる等)
 //   draw()    … 毎フレーム呼ばれる。絵を描くだけ。状態は変えない
 //
@@ -25,17 +25,19 @@ const Game = {
   // 敵。x,y は頭の中心。
   //   offsetX: 殴られて横へずれる量 / tilt: 傾く角度 / squash: 潰れる量 / back: 後ろへ下がる量(奥へ小さくなる)
   //   (どれも殴られた瞬間に値が入り、時間で元に戻る)
-  enemy: { x: 0, y: 0, offsetX: 0, flashLeft: 0, tilt: 0, squash: 0, back: 0 },
+  //   lift: 浮いている高さ / vy,g,v0: 浮き(空中)の動き / air: 浮いているか
+  enemy: { x: 0, y: 0, offsetX: 0, flashLeft: 0, tilt: 0, squash: 0, back: 0, lift: 0, vy: 0, g: 0, v0: 0, air: false, launchedFor: -1 },
 
   combo: 0,
   lastHitAt: 0,
   totalHits: 0,
   tapTimes: [],   // 直近1秒に出した技の時刻(1秒あたりの技数の計算用)
   history: [],    // 今のコンボで出した技のid(例: ['light','light','heavy'])
-  selected: MOVE_INFO.find(i => !i.delayed).id, // いま選んでいる技(画面下のボタンで切り替え。画面タップで出る技)
+  selected: MOVE_INFO.find(i => !i.delayed && !i.swipe).id, // いま選んでいる技(画面下のボタンで切り替え。画面タップで出る技)
   lockUntil: 0,   // 硬直: この時刻まで次の技を出せない
   charging: null, // 長押しで溜め中の状態 { id, startAt, ready } / 溜めていなければ null
   delayed: {},    // 後ろで溜め中の技 { id: { startAt, ready } }
+  aiming: null,   // 溜撃を撃つ場所を選んでいる最中なら、その技のid(次の画面タップで発射)
   punchSide: 1,   // 画面の中央付近を殴るとき、どちらの腕を使うか(1か-1。攻撃のたびに入れ替える)
 
   // 画面サイズが決まったとき・変わったときに位置を決め直す
@@ -47,7 +49,8 @@ const Game = {
   // ★ 技が出た瞬間の処理(手触りの中心)
   // id: 技のid / level: 溜め技の溜まり具合(0〜1)。溜め技以外は使わない
   // pos: タップした位置 {x, y}。拳・衝撃・擬音・火花・数字はここに出る。null なら敵の胸のあたりに出る
-  attack(id, level = 1, pos = null) {
+  // opts.from: スワイプ(キック)の始点 {x, y}。軌跡の描画に使う
+  attack(id, level = 1, pos = null, opts = {}) {
     const now = performance.now();
     if (now < this.lockUntil) return false; // 硬直中は出せない
 
@@ -73,7 +76,7 @@ const Game = {
     // 当たった位置: タップした場所。位置がないとき(キーボード操作・溜撃)は敵の胸のあたり
     const e = this.enemy;
     const hx = pos ? pos.x : e.x + (Math.random() * 60 - 30);
-    const hy = pos ? pos.y : e.y + 60 + (Math.random() * 40 - 20);
+    const hy = pos ? pos.y : e.y - e.lift + 60 + (Math.random() * 40 - 20);
 
     // --- 手触りの演出(それぞれの強さは config.js / ⚙パネルで調整) ---
     Effects.shake(m.shakePower * scale, m.shakeDecay);                                    // 画面揺れ
@@ -91,8 +94,16 @@ const Game = {
     e.tilt = dir * 0.16 * kick;
     e.squash = 0.10 * kick;
     e.back = Math.min(0.1, 0.002 * m.knockback * scale);
+    // 浮いている最中に殴ると、また持ち上がる(空中コンボ)
+    if (e.air) e.vy = Math.max(e.vy, e.v0 * 0.55);
 
     // --- 見た目の演出 ---
+    // キック: スワイプの軌跡と、画面の下から伸びる太い足
+    if (info.swipe && m.fistSize > 0) {
+      const f = opts.from || { x: hx, y: hy + 60 };
+      Effects.spawnSlash(f.x, f.y, hx, hy, m.fistSize * vis * 0.8, info.color);
+      Effects.spawnFist(f.x < this.W / 2 ? this.W * 0.3 : this.W * 0.7, this.H + 10, hx, hy, m.fistSize * vis, info.color, 2);
+    } else
     // 拳: 画面の下の左右の縁から、当たった位置まで。タップした側に近い腕を使う(中央あたりは左右交互)
     if (m.fistSize > 0) {
       let side;
@@ -101,6 +112,8 @@ const Game = {
       else { this.punchSide = -this.punchSide; side = this.punchSide; }
       Effects.spawnFist(this.W / 2 + side * this.W * 0.36, this.H + 10, hx, hy, m.fistSize * vis, info.color);
     }
+    // 爆発(エネルギー玉と溜撃): 丸く広がる光。溜めた分だけ大きい
+    if (info.orb || info.delayed) Effects.spawnBlast(hx, hy, m.impactSize * vis * 1.1, info.color);
     // 衝撃: 当たった場所に広がる輪と放射線
     if (m.impactSize > 0) Effects.spawnImpact(hx, hy, m.impactSize * vis, info.color);
     // 擬音: 候補の中からランダムに1つ
@@ -142,14 +155,38 @@ const Game = {
     const id = this.charging.id;
     this.charging = null;
     GameAudio.stopCharge();
-    this.attack(id, level, pos);
+    const info = MOVE_BY_ID[id];
+    if (info.orb) {
+      // エネルギー玉: 溜めた大きさのまま画面の下から飛ばし、着いた瞬間に当たって爆発する
+      const o = this.orbPos(id, level);
+      const e = this.enemy;
+      const tx = pos ? pos.x : e.x, ty = pos ? pos.y : e.y - e.lift + 60;
+      Effects.spawnOrb(o.x, o.y, tx, ty, o.r, info.color, () => this.attack(id, level, { x: tx, y: ty }));
+      GameAudio.playStart();
+    } else {
+      this.attack(id, level, pos);
+    }
+  },
+  // 溜め中の玉の位置と大きさ(溜めるほど大きい)
+  orbPos(id, level) {
+    const m = P.moves[id];
+    const lv = m.chargeMinLevel + (1 - m.chargeMinLevel) * level;
+    return { x: this.W / 2, y: this.H * 0.78, r: m.orbSize * (0.3 + 0.7 * lv) };
+  },
+  // 長押しをやめて、撃たずに取り消す(スワイプ=キックに切り替わったとき)
+  cancelCharge() {
+    if (!this.charging) return;
+    this.charging = null;
+    GameAudio.stopCharge();
   },
 
   // ---- 後ろで溜まる技(溜撃) ----
   // 状態は3つ: 'idle'(何もしていない) / 'charging'(溜め中) / 'ready'(満タン。光っている)
   delayedState(id) {
     const d = this.delayed[id];
-    return !d ? 'idle' : (d.ready ? 'ready' : 'charging');
+    if (!d) return 'idle';
+    if (this.aiming === id) return 'aiming';
+    return d.ready ? 'ready' : 'charging';
   },
   // 今の溜まり具合(0〜1)。溜めていなければ 0
   delayedLevel(id) {
@@ -157,7 +194,9 @@ const Game = {
     if (!d) return 0;
     return Math.min(1, (performance.now() - d.startAt) / P.moves[id].chargeMaxMs);
   },
-  // ボタンが押された。idle → 溜め開始 / ready → 発射 / charging → 何もしない(まだ撃てない)
+  // ボタンが押された。
+  //   idle → 溜め開始 / charging → まだ撃てない
+  //   ready → 狙いモード(次の画面タップで、その場所に発射) / aiming → 取り消して ready に戻る
   pressDelayed(id) {
     const d = this.delayed[id];
     if (!d) {
@@ -165,25 +204,65 @@ const Game = {
       GameAudio.playStart();
       return 'start';
     }
-    if (d.ready && performance.now() >= this.lockUntil) {
-      delete this.delayed[id];
-      this.attack(id, 1, null);
-      return 'fire';
+    if (this.aiming === id) { this.aiming = null; return 'cancel'; }
+    if (d.ready) {
+      this.aiming = id;
+      GameAudio.playReady();
+      return 'aim';
     }
     return 'wait';
+  },
+  // 狙いモード中に画面をタップした → その場所へ発射。狙いモードでなければ false(通常の攻撃として扱う)
+  fireAimed(pos) {
+    const id = this.aiming;
+    if (!id || !this.delayed[id]) return false;
+    if (performance.now() < this.lockUntil) return true; // 硬直中: タップを使わずに待つ
+    this.aiming = null;
+    delete this.delayed[id];
+    this.attack(id, 1, pos);
+    return true;
   },
 
   update(realDt) {
     // Effects.update が「ゲーム内で進める時間」を返す(ヒットストップ中は0)
     const worldDt = Effects.update(realDt);
 
-    // のけぞり・傾き・潰れ・後退が元に戻る
-    const k = Math.pow(FIXED.recoverRate, worldDt * 60);
     const e = this.enemy;
+    const g = P.global;
+    const now0 = performance.now();
+    const sinceHit = now0 - this.lastHitAt;
+
+    // 連打中(最後に殴ってから floatDelayMs 以内)は殴られ続けている → 揺れが元に戻りにくい
+    const pummel = this.combo >= 2 && sinceHit < g.floatDelayMs;
+    // のけぞり・傾き・潰れ・後退が元に戻る
+    const k = Math.pow(pummel ? 0.93 : FIXED.recoverRate, worldDt * 60);
     e.offsetX *= k;
     e.tilt *= k;
     e.squash *= k;
     e.back *= k;
+
+    // 連打が止んだ → 敵が浮く(間)。ある程度つないだときだけ。同じ最後の一撃では1回だけ
+    if (!e.air && this.combo >= g.floatMinCombo && g.floatHeight > 0 &&
+        sinceHit >= g.floatDelayMs && e.launchedFor !== this.lastHitAt) {
+      e.launchedFor = this.lastHitAt;
+      const h = g.floatHeight * Math.min(1.4, 0.5 + this.combo * 0.1);
+      const T = g.floatMs / 1000;
+      e.v0 = 4 * h / T;       // 上がり始めの速さ
+      e.g = 8 * h / (T * T);  // 重力(弱めなので、ふわっと浮いて、少し止まって見える)
+      e.vy = e.v0;
+      e.air = true;
+    }
+    // 浮いている間の動き(上がって、下がる)
+    if (e.air) {
+      e.vy -= e.g * worldDt;
+      e.lift += e.vy * worldDt;
+      if (e.lift <= 0) {
+        e.lift = 0; e.vy = 0; e.air = false;
+        Effects.shake(7, 0.85);                                  // 着地のドスン
+        Effects.spawnSfx(this.W / 2, e.y + 150, 'ドサッ', 24, '#9aa4bf');
+      }
+    }
+    this.pummeling = pummel;
 
     // 白点滅の残り時間
     e.flashLeft = Math.max(0, e.flashLeft - worldDt * 1000);
@@ -262,8 +341,11 @@ const Game = {
     const c = FIXED.colors;
     const e = this.enemy;
     const t = performance.now() / 1000;
-    const cx = e.x + e.offsetX + Math.sin(t * 1.1) * 3; // 構えながら、ゆらゆら揺れる
-    const cy = e.y + Math.sin(t * 2.2) * 2;             // 呼吸で上下する
+    // 連打中は殴られ続けて小刻みに震える。浮いている間は、ふらふら揺れる
+    const jit = this.pummeling ? P.global.pummelShake * Math.min(1, this.combo / 5) : 0;
+    const jx = (Math.random() * 2 - 1) * jit, jy = (Math.random() * 2 - 1) * jit;
+    const cx = e.x + e.offsetX + Math.sin(t * 1.1) * 3 + jx; // 構えながら、ゆらゆら揺れる
+    const cy = e.y - e.lift + Math.sin(t * 2.2) * 2 + jy;    // 呼吸で上下する。浮いていれば持ち上がる
     const flash = e.flashLeft > 0;
     const skin = flash ? c.enemyFlash : c.enemy;
     const cloth = flash ? c.enemyFlash : c.enemyBody;
@@ -275,7 +357,7 @@ const Game = {
     ctx.translate(-this.W / 2, -this.H * 0.5);
     // 傾き・潰れ: 画面の下の縁(体の根元)を支点にする
     ctx.translate(cx, this.H);
-    ctx.rotate(e.tilt);
+    ctx.rotate(e.tilt + (e.air ? Math.sin(t * 6) * 0.04 : 0));
     ctx.scale(1 - e.squash, 1 + e.squash * 0.6);
     ctx.translate(-cx, -this.H);
 
@@ -354,34 +436,38 @@ const Game = {
       ctx.globalAlpha = 1;
     }
 
-    // 必殺: 画面の下の拳
+    // 必殺: 画面の下でエネルギー玉が育つ。溜めるほど大きく、震える。満タンで脈打つ
     const lv = this.chargeLevel();
     const hold = MOVE_INFO.find(i => i.charge);
     if (lv > 0 && hold) {
       const full = this.charging && this.charging.ready;
-      const x = W / 2 + (Math.random() * 2 - 1) * lv * 3; // 溜まるほど震える
-      const y = H * 0.8 + (Math.random() * 2 - 1) * lv * 3;
-      const r = 26 * (1 + lv * 0.6);
-      const pulse = full ? Math.sin(performance.now() / 60) * 3 : 0;
-
-      ctx.globalAlpha = 0.35 + 0.65 * lv;
-      ctx.fillStyle = full ? '#ffffff' : hold.color;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = hold.color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(x, y, r + 8 + pulse, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      const o = this.orbPos(hold.id, lv);
+      const x = o.x + (Math.random() * 2 - 1) * lv * 3;
+      const y = o.y + (Math.random() * 2 - 1) * lv * 3;
+      const pulse = full ? 1 + Math.sin(performance.now() / 60) * 0.08 : 1;
+      Effects.drawEnergyBall(ctx, x, y, o.r * pulse, full ? '#ffffff' : hold.color, 0.5 + 0.5 * lv);
 
       // 溜めゲージ
-      const gw = 100, gh = 8, gx = W / 2 - gw / 2, gy = y + r + 20;
+      const gw = 100, gh = 8, gx = W / 2 - gw / 2, gy = y + o.r * 1.6 + 10;
       ctx.fillStyle = 'rgba(255,255,255,0.2)';
       ctx.fillRect(gx, gy, gw, gh);
       ctx.fillStyle = full ? '#ffffff' : hold.color;
       ctx.fillRect(gx, gy, gw * lv, gh);
+    }
+
+    // 溜撃の狙いモード: 撃つ場所をタップするよう促す
+    if (this.aiming) {
+      const info = MOVE_BY_ID[this.aiming];
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.globalAlpha = 0.75 + 0.25 * Math.sin(performance.now() / 120);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText('撃つ場所をタップ!', W / 2, 150);
+      ctx.fillStyle = info.color;
+      ctx.fillText('撃つ場所をタップ!', W / 2, 150);
+      ctx.restore();
     }
   },
 
@@ -390,7 +476,7 @@ const Game = {
     ctx.textAlign = 'left';
     ctx.fillStyle = c.subText;
     ctx.font = '13px sans-serif';
-    ctx.fillText('画面タップで攻撃 / 下のボタンで技を選ぶ', 12, 24);
+    ctx.fillText('タップ=パンチ  スワイプ=キック', 12, 24);
 
     ctx.fillStyle = c.text;
     ctx.font = 'bold 28px sans-serif';

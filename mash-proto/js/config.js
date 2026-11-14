@@ -20,17 +20,19 @@
 // ------------------------------------------------------------
 // 1. 技の一覧(並び順がそのまま画面のボタンの並び順)
 // ------------------------------------------------------------
-// 技の種類は3つ:
-//   (何も付けない) … 技を選んで、画面タップで出す
-//   charge: true   … 技を選んで、画面を長押しで溜め、離すと撃つ
-//   delayed: true  … 選ぶ技ではなく「押す専用ボタン」。押すと後ろで溜まり始め、
-//                    溜まったらボタンが光る。もう一度押すと撃つ。溜めている間も他の技で殴れる
+// 技の種類は4つ:
+//   (何も付けない) … 技を選んで、画面タップで出す(パンチ)
+//   swipe: true    … 選ぶ技ではなく、画面を「スワイプ」すると出る技(キック)
+//   charge: true   … 技を選んで、画面を長押しで溜め、離すと撃つ。
+//                    orb: true を付けると「溜めた分だけ大きなエネルギー玉」を飛ばし、当たって爆発する
+//   delayed: true  … 選ぶ技ではなく「押す専用ボタン」。押すと後ろで溜まり始め、溜まったらボタンが光る。
+//                    光ったボタンを押す → 撃ちたい場所をタップ、で発射。溜めている間も他の技で殴れる
 // sfx: 当たったときに出る擬音の候補(この中からランダムに1つ出る)
 const MOVE_INFO = [
-  { id: 'light',   name: '弱',   color: '#4da3ff', damage: 3,  popupSize: 15, sfx: ['ペシッ', 'ポコッ', 'パシッ'] },
   { id: 'medium',  name: '中',   color: '#4dd6a0', damage: 6,  popupSize: 19, sfx: ['ドスッ', 'ゴスッ', 'バシッ'] },
   { id: 'heavy',   name: '強',   color: '#ff7a59', damage: 12, popupSize: 24, sfx: ['ドガッ!', 'ボゴッ!', 'バキッ!'] },
-  { id: 'special', name: '必殺', color: '#ffc233', damage: 30, popupSize: 30, charge: true,  sfx: ['ドゴォォン!!', 'ズバァン!!'] },
+  { id: 'kick',    name: 'キック', color: '#4da3ff', damage: 9, popupSize: 22, swipe: true, sfx: ['ビシッ!', 'ズバッ!', 'バシィッ!'] },
+  { id: 'special', name: '必殺', color: '#ffc233', damage: 30, popupSize: 30, charge: true, orb: true, sfx: ['ドゴォォン!!', 'ズバァン!!'] },
   { id: 'burst',   name: '溜撃', color: '#b388ff', damage: 50, popupSize: 34, delayed: true, sfx: ['ズドォォォン!!!', 'ドッゴォォン!!!'] },
 ];
 
@@ -70,7 +72,7 @@ const MOVE_PARAM_DEFS = [
     hint: 'この技を出したあと、次の技を出せるまでの時間。0なら制限なし。今は迷ったら0のままでOK。' },
 
   { key: 'fistSize', group: '見た目の演出', label: '拳の大きさ(0で無し)', min: 0, max: 40, step: 1,
-    hint: '自分から当たった場所まで伸びる拳と腕。大きい→ドカンと殴る感じ。0にすると拳が出なくなる。' },
+    hint: '画面の下から当たった場所まで伸びる拳(キックなら足)。大きい→ドカンと殴る感じ。0にすると出なくなる。' },
   { key: 'impactSize', group: '見た目の演出', label: '衝撃の大きさ(0で無し)', min: 0, max: 120, step: 2,
     hint: '当たった場所に広がる輪と放射線の大きさ。大きい→派手。' },
   { key: 'sfxSize', group: '見た目の演出', label: '擬音の文字の大きさ(0で無し)', min: 0, max: 70, step: 1,
@@ -78,23 +80,20 @@ const MOVE_PARAM_DEFS = [
   { key: 'zoomPunch', group: '見た目の演出', label: 'ズームパンチ(0で無し)', min: 0, max: 0.15, step: 0.005,
     hint: '当たった瞬間に画面がわずかに拡大する量。強い技ほど大きいと重く感じる。上げすぎると酔いやすい。' },
 
+  { key: 'orbSize', group: '見た目の演出', label: 'エネルギー玉の最大の大きさ', min: 10, max: 80, step: 1, onlyOrb: true,
+    hint: '満タンまで溜めたときの玉の大きさ(溜め時間が短いほど小さくなる)。爆発の大きさにも効く。' },
+
   { key: 'chargeMaxMs', group: '溜め', label: '満タンまでの時間(ミリ秒)', min: 300, max: 6000, step: 50, onlyCharge: true,
-    hint: '必殺: 長押しで満タンになるまでの時間。溜撃: 押してからボタンが光るまでの待ち時間。' },
+    hint: '必殺: 長押しで玉が最大になるまでの時間。溜撃: 押してからボタンが光るまでの待ち時間。' },
   { key: 'chargeMinLevel', group: '溜め', label: '溜めずに離したときの威力(割合)', min: 0, max: 1, step: 0.05, onlyHold: true,
     hint: '1=満タンと同じ威力。小さいほど「溜める価値」が大きくなる。' },
 ];
 
 // ------------------------------------------------------------
 // 3. 技ごとの初期値 ← 手触りの数値の本体
-//    弱 < 中 < 強 < 必殺 < 溜撃 の順に「重く・派手に・低い音に」なるよう設計してある
+//    中 < 強 < 必殺 < 溜撃 の順に「重く・派手に・低い音に」なるよう設計してある
 // ------------------------------------------------------------
 const MOVE_DEFAULTS = {
-  light: {
-    power: 1, shakePower: 5, shakeDecay: 0.82, hitStopMs: 22, knockback: 10, flashMs: 50,
-    particleCount: 6, particleSpeed: 240, volume: 0.45, pitchOffset: 3, soundLen: 0.7,
-    vibrateMs: 6, lockoutMs: 0,
-    fistSize: 9, impactSize: 18, sfxSize: 18, zoomPunch: 0,
-  },
   medium: {
     power: 1, shakePower: 9, shakeDecay: 0.85, hitStopMs: 40, knockback: 18, flashMs: 70,
     particleCount: 10, particleSpeed: 300, volume: 0.5, pitchOffset: 0, soundLen: 1.0,
@@ -107,12 +106,18 @@ const MOVE_DEFAULTS = {
     vibrateMs: 25, lockoutMs: 0,
     fistSize: 17, impactSize: 44, sfxSize: 34, zoomPunch: 0.035,
   },
+  kick: {
+    power: 1, shakePower: 12, shakeDecay: 0.88, hitStopMs: 55, knockback: 26, flashMs: 90,
+    particleCount: 12, particleSpeed: 360, volume: 0.55, pitchOffset: -2, soundLen: 1.2,
+    vibrateMs: 16, lockoutMs: 0,
+    fistSize: 15, impactSize: 36, sfxSize: 28, zoomPunch: 0.02,
+  },
   special: {
     power: 1, shakePower: 28, shakeDecay: 0.92, hitStopMs: 130, knockback: 55, flashMs: 160,
     particleCount: 28, particleSpeed: 520, volume: 0.75, pitchOffset: -9, soundLen: 2.2,
     vibrateMs: 40, lockoutMs: 0,
-    fistSize: 22, impactSize: 62, sfxSize: 44, zoomPunch: 0.06,
-    chargeMaxMs: 900, chargeMinLevel: 0.3,
+    fistSize: 0, impactSize: 70, sfxSize: 44, zoomPunch: 0.06, orbSize: 46,
+    chargeMaxMs: 1200, chargeMinLevel: 0.3,
   },
   burst: {
     power: 1, shakePower: 32, shakeDecay: 0.93, hitStopMs: 160, knockback: 65, flashMs: 200,
@@ -133,8 +138,23 @@ const GLOBAL_PARAM_DEFS = [
     hint: '連打すると音が高くなっていく量。0にすると同じ音のまま。上げると「乗ってきた」感が出る。' },
   { key: 'pitchMaxSemitones', group: '共通', label: '音の上がり上限(半音)', min: 0, max: 24, step: 1,
     hint: '音がどこまで高くなるか。12で1オクターブ。高すぎて耳に痛いなら下げる。' },
+
+  // ---- 連打中は殴られ続け、止むと浮く ----
+  { key: 'pummelShake', group: '共通', label: '連打中の小刻みな揺れ', min: 0, max: 12, step: 0.5,
+    hint: '連打している間、敵が殴られ続けて震える強さ。連打が続くほど強くなる。0で無し。' },
+  { key: 'floatMinCombo', group: '共通', label: '何回殴ったら浮くか', min: 2, max: 10, step: 1,
+    hint: 'この回数以上つないで、攻撃をやめると敵が浮く。小さい→すぐ浮く。大きい→たくさん殴らないと浮かない。' },
+  { key: 'floatDelayMs', group: '共通', label: '攻撃をやめてから浮くまで(ミリ秒)', min: 80, max: 600, step: 10,
+    hint: '連打が途切れて、この時間がたつと敵が浮き始める。長い→連打の「間」を許す。短い→すぐ浮く。' },
+  { key: 'floatHeight', group: '共通', label: '浮く高さ', min: 0, max: 120, step: 2,
+    hint: 'コンボが長いほど高く浮く(これが基準)。0で浮かない。' },
+  { key: 'floatMs', group: '共通', label: '浮いている時間(ミリ秒)', min: 300, max: 2000, step: 50,
+    hint: '浮いて落ちるまでの時間。この「間」の中で次の技を入れると、空中コンボになる。' },
 ];
-const GLOBAL_DEFAULTS = { comboTimeoutMs: 700, pitchPerCombo: 0.3, pitchMaxSemitones: 12 };
+const GLOBAL_DEFAULTS = {
+  comboTimeoutMs: 700, pitchPerCombo: 0.3, pitchMaxSemitones: 12,
+  pummelShake: 4, floatMinCombo: 3, floatDelayMs: 220, floatHeight: 46, floatMs: 900,
+};
 
 // ------------------------------------------------------------
 // 5. 固定値: ⚙には出さないが、ソース上で変えられる値
@@ -147,6 +167,10 @@ const FIXED = {
   fistLifeSec: 0.22,      // 拳が出て、引っ込んで、消えるまでの秒数
   impactLifeSec: 0.28,    // 衝撃の輪が広がって消えるまでの秒数
   sfxLifeSec: 0.5,        // 擬音の文字が消えるまでの秒数
+  orbFlySec: 0.2,         // エネルギー玉が飛んでいって当たるまでの秒数
+  slashLifeSec: 0.18,     // キックの軌跡が消えるまでの秒数
+  blastLifeSec: 0.4,      // 爆発が広がって消えるまでの秒数
+  swipePx: 36,            // この距離(画面のpx)以上指が動いたらスワイプ(キック)と見なす
   historyMax: 10,         // 画面に表示する「出した技の履歴」の最大数
   colors: {
     bg: '#1b1f2a',
